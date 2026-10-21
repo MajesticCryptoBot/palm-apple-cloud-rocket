@@ -1,8 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
-  Check,
+  ArrowDown,
+  CheckCheck,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
   Clock,
+  Copy,
+  Menu,
   PanelRight,
   Plus,
   Search,
@@ -11,7 +16,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type CommandSpec, type Message } from "@/lib/wire/engine";
+import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type Message } from "@/lib/wire/engine";
 import { useDesk } from "@/lib/wire/store";
 
 function initials(name: string) {
@@ -33,22 +38,33 @@ function dayLabel(ts: number) {
   return d.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 }
 
-function Rich({ text }: { text: string }) {
+function Rich({ text, query }: { text: string; query?: string }) {
+  const needle = query?.trim().toLowerCase() ?? "";
   const lines = text.split("\n");
   return (
     <>
       {lines.map((line, i) => (
         <span key={i}>
           {i > 0 && <br />}
-          {line.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
-            part.startsWith("**") && part.endsWith("**") ? (
-              <strong key={j} className="font-semibold">
-                {part.slice(2, -2)}
-              </strong>
-            ) : (
-              <span key={j}>{part}</span>
-            ),
-          )}
+          {line.split(/(\*\*[^*]+\*\*)/g).map((part, j) => {
+            if (part.startsWith("**") && part.endsWith("**")) {
+              return (
+                <strong key={j} className="font-semibold">
+                  {part.slice(2, -2)}
+                </strong>
+              );
+            }
+            if (!needle) return <span key={j}>{part}</span>;
+            const at = part.toLowerCase().indexOf(needle);
+            if (at < 0) return <span key={j}>{part}</span>;
+            return (
+              <span key={j}>
+                {part.slice(0, at)}
+                <mark className="rounded-sm bg-warn/50 px-0.5 text-fg">{part.slice(at, at + needle.length)}</mark>
+                {part.slice(at + needle.length)}
+              </span>
+            );
+          })}
         </span>
       ))}
     </>
@@ -210,10 +226,12 @@ function ChatRow({ bot, active, onPick }: { bot: Bot; active: boolean; onPick: (
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <span className="truncate font-medium">{bot.name}</span>
-          <span className="shrink-0 text-xs text-muted">{last ? hm(last.ts) : ""}</span>
+          <span className={`shrink-0 text-xs ${bot.unread > 0 ? "text-accent" : "text-muted"}`}>{last ? hm(last.ts) : ""}</span>
         </span>
         <span className="mt-0.5 flex items-center justify-between gap-2">
-          <span className={`truncate text-sm ${bot.typing ? "text-accent" : "text-muted"}`}>{previewLine(bot)}</span>
+          <span className={`truncate text-sm ${bot.typing ? "text-accent" : bot.unread > 0 ? "font-medium text-fg" : "text-muted"}`}>
+            {previewLine(bot)}
+          </span>
           {bot.unread > 0 && (
             <span className="grid min-w-5 place-items-center rounded-full bg-accent px-1.5 text-xs font-semibold text-bg">
               {bot.unread}
@@ -239,29 +257,88 @@ function Thread({
   onToggleInfo: () => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
+  const seen = useRef(bot.messages.length);
   const [chatQuery, setChatQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [hit, setHit] = useState(0);
+  const [below, setBelow] = useState(0);
+  const [atBottom, setAtBottom] = useState(true);
   const quotes = laneQuotes(bot);
-  const visible = chatQuery.trim()
-    ? bot.messages.filter((m) => m.text.toLowerCase().includes(chatQuery.trim().toLowerCase()))
-    : bot.messages;
+  const needle = chatQuery.trim().toLowerCase();
+  const hits = useMemo(
+    () => (needle ? bot.messages.filter((m) => m.text.toLowerCase().includes(needle)).map((m) => m.id) : []),
+    [bot.messages, needle],
+  );
   const lastLive = [...bot.messages].reverse().find((m) => m.from === "bot");
+
+  function jump() {
+    const el = scroller.current;
+    if (!el) return;
+    stick.current = true;
+    el.scrollTop = el.scrollHeight;
+    setAtBottom(true);
+    setBelow(0);
+  }
+
+  function onScroll() {
+    const el = scroller.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 72;
+    stick.current = near;
+    setAtBottom(near);
+    if (near) setBelow(0);
+  }
+
+  useEffect(() => {
+    seen.current = bot.messages.length;
+    stick.current = true;
+    setBelow(0);
+    setAtBottom(true);
+    setChatQuery("");
+    setSearchOpen(false);
+    setHit(0);
+    const el = scroller.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [bot.id]);
 
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (!el || chatQuery.trim()) return;
-    const go = () => {
+    if (!el || needle) return;
+    const delta = bot.messages.length - seen.current;
+    const last = bot.messages[bot.messages.length - 1];
+    seen.current = bot.messages.length;
+    if (delta <= 0 && !bot.typing) return;
+    if (stick.current || last?.from === "me") {
       el.scrollTop = el.scrollHeight;
-    };
-    go();
-    const id = requestAnimationFrame(go);
-    return () => cancelAnimationFrame(id);
-  }, [bot.id, bot.messages.length, bot.typing, chatQuery]);
+      stick.current = true;
+      setAtBottom(true);
+      setBelow(0);
+    } else if (delta > 0) {
+      setBelow((n) => n + delta);
+    }
+  }, [bot.messages.length, bot.typing, bot.id, needle]);
 
   useEffect(() => {
-    setChatQuery("");
-    setSearchOpen(false);
-  }, [bot.id]);
+    setHit(0);
+  }, [needle, bot.id]);
+
+  useEffect(() => {
+    const id = hits[hit];
+    if (!id) return;
+    document.getElementById(`m-${id}`)?.scrollIntoView({ block: "center" });
+  }, [hit, hits]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <>
@@ -277,11 +354,11 @@ function Thread({
         <Avatar name={bot.name} online={bot.online} size="sm" />
         <div className="min-w-0 flex-1">
           <div className="truncate font-semibold leading-tight">{bot.name}</div>
-          <div className={`truncate text-xs ${bot.online ? "text-online" : "text-muted"}`}>
+          <div className={`truncate text-xs ${bot.online ? "text-accent" : "text-muted"}`}>
             {bot.typing ? (
-              <span className="text-accent">typing</span>
+              <span>typing</span>
             ) : bot.online ? (
-              "online"
+              "bot"
             ) : (
               `last seen ${hm(bot.lastSeen)}`
             )}
@@ -329,44 +406,109 @@ function Thread({
       </header>
 
       {searchOpen && (
-        <div className="shrink-0 border-b border-line bg-sidebar px-3 py-2">
+        <div className="flex shrink-0 items-center gap-2 border-b border-line bg-sidebar px-3 py-2">
           <input
             autoFocus
             value={chatQuery}
             onChange={(e) => setChatQuery(e.target.value)}
-            placeholder="Search in this chat"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSearchOpen(false);
+              if (e.key === "Enter" && hits.length) {
+                e.preventDefault();
+                setHit((i) => (e.shiftKey ? (i - 1 + hits.length) % hits.length : (i + 1) % hits.length));
+              }
+            }}
+            placeholder="Search this chat"
             className="w-full rounded-full bg-bg px-3 py-2 text-sm outline-none"
           />
+          <span className="shrink-0 text-xs text-muted tabular-nums">
+            {hits.length ? `${hit + 1} of ${hits.length}` : "0"}
+          </span>
+          <button
+            type="button"
+            className="grid size-8 place-items-center rounded-full text-muted hover:bg-elevated disabled:opacity-40"
+            disabled={!hits.length}
+            onClick={() => setHit((i) => (i - 1 + hits.length) % hits.length)}
+            aria-label="Previous match"
+          >
+            <ChevronUp className="size-4" />
+          </button>
+          <button
+            type="button"
+            className="grid size-8 place-items-center rounded-full text-muted hover:bg-elevated disabled:opacity-40"
+            disabled={!hits.length}
+            onClick={() => setHit((i) => (i + 1) % hits.length)}
+            aria-label="Next match"
+          >
+            <ChevronDown className="size-4" />
+          </button>
+          <button
+            type="button"
+            className="grid size-8 place-items-center rounded-full text-muted hover:bg-elevated"
+            onClick={() => {
+              setSearchOpen(false);
+              setChatQuery("");
+            }}
+            aria-label="Close search"
+          >
+            <X className="size-4" />
+          </button>
         </div>
       )}
 
-      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 md:px-6">
-        <div className="mx-auto flex max-w-3xl flex-col gap-1.5">
-          {visible.map((m, i) => {
-            const prev = visible[i - 1];
-            const showDay = !prev || new Date(prev.ts).toDateString() !== new Date(m.ts).toDateString();
-            return (
-              <div key={m.id}>
-                {showDay && (
-                  <div className="my-2 flex justify-center">
-                    <span className="rounded-full bg-bubble-in px-3 py-1 text-xs text-muted">{dayLabel(m.ts)}</span>
-                  </div>
-                )}
-                <Bubble message={m} />
+      <div className="relative min-h-0 flex-1">
+        <div ref={scroller} onScroll={onScroll} className="thread-bg absolute inset-0 overflow-y-auto px-3 py-3 md:px-8">
+          <div className="mx-auto flex max-w-3xl flex-col">
+            {bot.messages.map((m, i) => {
+              const prev = bot.messages[i - 1];
+              const next = bot.messages[i + 1];
+              const showDay = !prev || new Date(prev.ts).toDateString() !== new Date(m.ts).toDateString();
+              const same = (a?: Message, b?: Message) =>
+                !!a && !!b && a.from === b.from && a.from !== "service" && b.ts - a.ts < 5 * 60 * 1000;
+              return (
+                <div key={m.id} id={`m-${m.id}`}>
+                  {showDay && (
+                    <div className="my-3 flex justify-center">
+                      <span className="rounded-full bg-bubble-in px-3 py-1 text-xs text-muted shadow-sm">{dayLabel(m.ts)}</span>
+                    </div>
+                  )}
+                  <Bubble
+                    message={m}
+                    query={needle}
+                    grouped={same(prev, m)}
+                    tail={!same(m, next)}
+                    current={hits[hit] === m.id}
+                  />
+                </div>
+              );
+            })}
+            {bot.typing && (
+              <div className="msg-in bubble bubble-in has-tail mt-2 mr-auto flex items-center gap-1 rounded-lg bg-bubble-in px-3 py-3">
+                <span className="typing-dot size-1.5 rounded-full bg-muted" />
+                <span className="typing-dot size-1.5 rounded-full bg-muted" />
+                <span className="typing-dot size-1.5 rounded-full bg-muted" />
               </div>
-            );
-          })}
-          {bot.typing && (
-            <div className="msg-in mr-auto flex items-center gap-1 rounded-md rounded-bl-sm bg-bubble-in px-3 py-3">
-              <span className="typing-dot size-1.5 rounded-full bg-muted" />
-              <span className="typing-dot size-1.5 rounded-full bg-muted" />
-              <span className="typing-dot size-1.5 rounded-full bg-muted" />
-            </div>
-          )}
+            )}
+          </div>
+          <div className="sr-only" aria-live="polite">
+            {lastLive?.text ?? ""}
+          </div>
         </div>
-        <div className="sr-only" aria-live="polite">
-          {lastLive?.text ?? ""}
-        </div>
+        {!atBottom && (
+          <button
+            type="button"
+            onClick={jump}
+            className="absolute right-4 bottom-3 z-10 grid size-11 place-items-center rounded-full bg-sidebar text-accent shadow-lg ring-1 ring-line"
+            aria-label={below ? `${below} new messages` : "Jump to latest"}
+          >
+            <ArrowDown className="size-5" />
+            {below > 0 && (
+              <span className="absolute -top-1.5 left-1/2 grid min-w-5 -translate-x-1/2 place-items-center rounded-full bg-accent px-1.5 text-xs font-semibold text-bg">
+                {below}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       <Composer bot={bot} />
@@ -374,29 +516,59 @@ function Thread({
   );
 }
 
-function Bubble({ message }: { message: Message }) {
+function Bubble({
+  message,
+  query,
+  grouped,
+  tail,
+  current,
+}: {
+  message: Message;
+  query: string;
+  grouped: boolean;
+  tail: boolean;
+  current: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
   if (message.from === "service") {
     return (
-      <div className="my-1 flex justify-center">
-        <span className="max-w-md rounded-full bg-bubble-in px-3 py-1 text-center text-xs text-muted">{message.text}</span>
+      <div className="my-2 flex justify-center">
+        <span className="max-w-md rounded-full bg-bubble-in px-3 py-1 text-center text-xs text-muted shadow-sm">{message.text}</span>
       </div>
     );
   }
   const mine = message.from === "me";
   const edge = message.tone === "trade" ? "tone-trade" : message.tone === "alert" ? "tone-alert" : "";
   return (
-    <div className={`msg-in flex ${mine ? "justify-end" : "justify-start"}`}>
+    <div className={`group flex ${mine ? "justify-end" : "justify-start"} ${grouped ? "mt-0.5" : "mt-2"}`}>
       <div
-        className={`bubble-col rounded-lg px-3 py-1.5 text-sm leading-normal ${
-          mine ? "rounded-br-sm bg-bubble-out" : `rounded-bl-sm bg-bubble-in ${edge}`
-        } ${message.mono ? "font-mono text-xs leading-relaxed" : ""}`}
+        className={`bubble bubble-col rounded-lg px-2.5 pt-1.5 pb-1.5 text-sm leading-snug ${
+          mine ? "bubble-out bg-bubble-out" : `bubble-in bg-bubble-in ${edge}`
+        } ${tail ? "has-tail" : ""} ${message.mono ? "font-mono text-xs leading-relaxed" : ""} ${
+          current ? "ring-1 ring-warn" : ""
+        }`}
       >
-        <span className="float-right mt-1 ml-3 inline-flex items-center gap-1 text-xs text-subtle">
+        <div className="pr-16 pb-0.5">
+          <Rich text={message.text} query={query} />
+        </div>
+        <span className="absolute right-2 bottom-1 inline-flex items-center gap-0.5 text-xs text-subtle">
           {message.pending && <Clock className="size-3" aria-label="Waiting to send" />}
           {hm(message.ts)}
-          {mine && !message.pending && <Check className="size-3 text-accent" aria-label="Sent" />}
+          {mine && !message.pending && <CheckCheck className="size-3.5 text-accent" aria-label="Read" />}
         </span>
-        <Rich text={message.text} />
+        <button
+          type="button"
+          onClick={() => {
+            void navigator.clipboard?.writeText(message.text).then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1200);
+            });
+          }}
+          className="absolute -top-2 right-1 rounded-full bg-sidebar px-2 py-1 text-xs text-muted opacity-0 shadow ring-1 ring-line group-hover:opacity-100"
+          aria-label="Copy message"
+        >
+          {copied ? "Copied" : <Copy className="size-3.5" />}
+        </button>
       </div>
     </div>
   );
@@ -406,45 +578,61 @@ function Composer({ bot }: { bot: Bot }) {
   const send = useDesk((s) => s.send);
   const [draft, setDraft] = useState("");
   const [menuIndex, setMenuIndex] = useState(0);
+  const [menuForced, setMenuForced] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setDraft("");
     setMenuIndex(0);
+    setMenuForced(false);
     inputRef.current?.focus();
   }, [bot.id]);
 
+  useEffect(() => {
+    if (!menuForced) return;
+    const onDown = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setMenuForced(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [menuForced]);
+
   const waiting =
     bot.conversation?.kind === "pair"
-      ? `Waiting for a ${bot.conversation.lane} pair. /cancel to abort.`
+      ? `Enter trading pair (e.g., BTC/${bot.conversation.lane})`
       : bot.conversation?.kind === "buy_price"
-        ? "Waiting for pair, price, and amount. /cancel to abort."
+        ? `Enter pair, buy price, and amount (e.g., BTC/${bot.conversation.lane} 80000 0.1)`
         : bot.conversation?.kind === "mb"
-          ? `Waiting for the ${bot.conversation.lane} amount. /cancel to abort.`
+          ? `Manual buy on this lane. Send the ${bot.conversation.lane} amount.`
           : null;
 
-  const menuOpen = draft.startsWith("/") && !draft.includes(" ") && !draft.includes("\n");
+  const filtering = draft.startsWith("/") && !draft.includes(" ") && !draft.includes("\n");
+  const showMenu = menuForced || filtering;
   const matches = useMemo(() => {
-    if (!menuOpen) return [];
+    if (!showMenu) return [];
+    if (!filtering || draft === "/") return COMMANDS;
     const needle = draft.toLowerCase();
     return COMMANDS.filter(
-      (c) => needle === "/" || c.name.startsWith(needle) || c.hint.toLowerCase().includes(needle.slice(1)),
+      (c) => c.name.startsWith(needle) || c.hint.toLowerCase().includes(needle.slice(1)),
     );
-  }, [draft, menuOpen]);
+  }, [draft, filtering, showMenu]);
 
   useEffect(() => {
     setMenuIndex(0);
-  }, [draft]);
+  }, [draft, menuForced]);
 
   function submit(text: string) {
     const value = text.trim();
     if (!value) return;
     send(value);
     setDraft("");
+    setMenuForced(false);
   }
 
   function onKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
-    if (menuOpen && matches.length) {
+    const navigating = showMenu && matches.length && (filtering || !draft);
+    if (navigating) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setMenuIndex((i) => (i + 1) % matches.length);
@@ -455,15 +643,24 @@ function Composer({ bot }: { bot: Bot }) {
         setMenuIndex((i) => (i - 1 + matches.length) % matches.length);
         return;
       }
-      if (e.key === "Escape") {
+      if (e.key === "Tab") {
         e.preventDefault();
-        setDraft("");
+        const name = matches[Math.min(menuIndex, matches.length - 1)]?.name;
+        if (name) setDraft(name + " ");
+        return;
+      }
+    }
+    if (e.key === "Escape") {
+      if (showMenu) {
+        e.preventDefault();
+        setMenuForced(false);
+        if (filtering) setDraft("");
         return;
       }
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (menuOpen && matches.length && !draft.includes(" ")) {
+      if (filtering && matches.length) {
         submit(matches[Math.min(menuIndex, matches.length - 1)]?.name ?? draft);
         return;
       }
@@ -472,18 +669,18 @@ function Composer({ bot }: { bot: Bot }) {
   }
 
   return (
-    <div className="relative shrink-0 border-t border-line bg-sidebar">
-      {menuOpen && matches.length > 0 && (
-        <ul className="absolute right-2 bottom-full left-2 z-10 mb-2 max-h-72 overflow-y-auto rounded-md border border-line bg-sidebar py-1 shadow-lg">
+    <div ref={boxRef} className="relative shrink-0 border-t border-line bg-sidebar">
+      {showMenu && matches.length > 0 && (
+        <ul className="absolute right-2 bottom-full left-2 z-20 mb-2 max-h-80 overflow-y-auto rounded-xl border border-line bg-sidebar py-1 shadow-xl">
           {matches.map((cmd, i) => (
             <li key={cmd.name}>
               <button
                 type="button"
                 onMouseEnter={() => setMenuIndex(i)}
                 onClick={() => submit(cmd.name)}
-                className={`flex w-full items-baseline gap-3 px-3 py-2 text-left ${i === menuIndex ? "bg-elevated" : ""}`}
+                className={`flex w-full items-baseline gap-3 px-3 py-2.5 text-left ${i === menuIndex ? "bg-elevated" : ""}`}
               >
-                <span className={`w-36 shrink-0 font-medium ${cmd.danger ? "text-danger" : "text-accent"}`}>{cmd.name}</span>
+                <span className={`w-40 shrink-0 font-medium ${cmd.danger ? "text-danger" : "text-fg"}`}>{cmd.name}</span>
                 <span className="truncate text-sm text-muted">{cmd.hint}</span>
               </button>
             </li>
@@ -491,65 +688,57 @@ function Composer({ bot }: { bot: Bot }) {
         </ul>
       )}
 
-      {waiting && <div className="px-4 pt-2 text-xs text-accent">{waiting}</div>}
+      {waiting && (
+        <div className="mx-3 mt-2 flex items-stretch overflow-hidden rounded-lg bg-bg">
+          <div className="w-1 shrink-0 bg-accent" />
+          <div className="min-w-0 flex-1 px-3 py-2">
+            <div className="text-xs font-medium text-accent">{bot.name}</div>
+            <div className="truncate text-sm text-muted">{waiting}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => submit("/cancel")}
+            className="grid w-10 place-items-center text-muted hover:text-fg"
+            aria-label="Cancel"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
 
-      <CommandRail
-        onSend={(name) => {
-          submit(name);
-          inputRef.current?.focus();
-        }}
-      />
-
-      <div className="flex items-end gap-2 px-3 pt-1 pb-3">
+      <div className="flex items-end gap-1.5 px-2 py-2">
+        <button
+          type="button"
+          onClick={() => {
+            setMenuForced((v) => !v);
+            inputRef.current?.focus();
+          }}
+          aria-expanded={menuForced}
+          aria-label="Commands"
+          className={`grid size-11 shrink-0 place-items-center rounded-full ${menuForced ? "bg-accent-strong text-fg" : "text-muted hover:bg-elevated"}`}
+        >
+          {menuForced ? <X className="size-5" /> : <Menu className="size-5" />}
+        </button>
         <textarea
           ref={inputRef}
           rows={1}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Write a message"
-          className="max-h-32 min-h-11 flex-1 resize-none rounded-md bg-bg px-3 py-2.5 text-sm outline-none placeholder:text-subtle"
+          placeholder={waiting ? "Reply" : "Message"}
+          className="max-h-32 min-h-11 flex-1 resize-none rounded-3xl bg-bg px-4 py-2.5 text-sm outline-none placeholder:text-subtle"
         />
         <button
           type="button"
           onClick={() => submit(draft)}
           disabled={!draft.trim()}
-          className="grid size-11 shrink-0 place-items-center rounded-full bg-accent-strong text-fg disabled:bg-elevated disabled:text-subtle"
+          className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-bg disabled:bg-elevated disabled:text-subtle"
           aria-label="Send"
         >
           <Send className="size-5" />
         </button>
       </div>
     </div>
-  );
-}
-
-function CommandRail({ onSend }: { onSend: (name: string) => void }) {
-  const groups = ["USDT", "USDC", "Isaac", "Session"] as const;
-  return (
-    <div className="flex gap-3 overflow-x-auto px-3 pt-2 pb-1">
-      {groups.map((group) => (
-        <div key={group} className="flex shrink-0 items-center gap-1">
-          <span className="pr-1 text-xs font-semibold tracking-wide text-subtle uppercase">{group}</span>
-          {COMMANDS.filter((c) => c.group === group).map((cmd) => (
-            <CommandChip key={cmd.name} cmd={cmd} onSend={onSend} />
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function CommandChip({ cmd, onSend }: { cmd: CommandSpec; onSend: (name: string) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onSend(cmd.name)}
-      title={cmd.hint}
-      className={`shrink-0 rounded-full bg-bg px-2.5 py-1.5 text-xs font-medium ${cmd.danger ? "text-danger" : "text-accent"} hover:bg-elevated`}
-    >
-      {cmd.name}
-    </button>
   );
 }
 
@@ -593,7 +782,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
           <p className="font-mono text-xs text-subtle tabular-nums">Pool ${bot.isaac.virtualUsdt.toFixed(0)} / {bot.isaac.allocated.toFixed(0)}</p>
         </section>
         <p className="text-xs leading-relaxed text-subtle">
-          Commands stay pinned above the message box. Alt+1 to Alt+9 switches bots. This desk speaks the same command set as the trading scripts.
+          The menu button next to the message box is the full command list. It stays there while you scroll. Type / to filter it. Alt+1 to Alt+9 switches bots. Tab completes a command, Enter sends it.
         </p>
         {!confirm ? (
           <button type="button" onClick={() => setConfirm(true)} className="text-sm text-danger">
