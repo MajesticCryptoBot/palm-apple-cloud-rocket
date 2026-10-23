@@ -74,21 +74,17 @@ function soundFor(replies: Reply[], active: boolean, sound: boolean) {
   else if (!active && replies.some((r) => r.tone === "normal")) playTone(false);
 }
 
-type ScriptSnapshot = { activePair?: string | null; activePairUSDC?: string | null; isaacPair?: string | null };
+type ScriptSnapshot = { symbol?: string | null; symbol2?: string | null; main_usdt?: number; main_usdc?: number; rescue_usdt?: number; rescue_usdc?: number; isaac_allocated?: number; ts?: string };
 
-export const BRIDGE_URL = "http://127.0.0.1:47832";
-export function bridgeUrl(bot: Bot): string { return `http://127.0.0.1:${bot.bridgePort ?? 47832}`; }
+export const BRIDGE_DIRECTORY = String.raw`C:\Users\pauld\Desktop\ABINANCE TESTNET`;
 
 declare global {
   interface Window {
     wire?: {
-      selectScript: () => Promise<string | null>;
-      selectPython: () => Promise<string | null>;
       selectWallpaper: () => Promise<string | null>;
       showNotification: (payload: { title: string; body: string; silent?: boolean }) => Promise<{ ok: boolean }>;
-      openBotLog: (port: number) => Promise<{ ok: boolean; error?: string }>;
-      startBot: (config: { scriptPath: string; port: number; pythonPath?: string }) => Promise<{ ok: boolean; error?: string }>;
-      stopBot: (port: number) => Promise<{ ok: boolean; error?: string }>;
+      bridgePoll: () => Promise<{ connected: boolean; error?: string; snapshot: ScriptSnapshot | null; items: { id: string; text: string; ts?: number }[]; bridgeDirectory: string }>;
+      bridgeCommand: (command: string) => Promise<{ ok: boolean; error?: string; text?: string; ts?: string }>;
     };
   }
 }
