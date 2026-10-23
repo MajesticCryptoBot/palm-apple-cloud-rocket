@@ -10,9 +10,13 @@ const runningBots = new Map();
 let serverProcess;
 
 function appFile(...parts) {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, ...parts)
-    : path.join(__dirname, ...parts);
+  if (app.isPackaged) {
+    if (parts[0] === "bridge") return path.join(process.resourcesPath, ...parts);
+    return path.join(app.getAppPath(), ...parts);
+  }
+  if (parts[0] === "bridge") return path.join(__dirname, parts[1]);
+  if (parts[0] === "desktop") return path.join(__dirname, ...parts.slice(1));
+  return path.join(__dirname, "..", ...parts);
 }
 
 function getDefaultScriptPath() {
