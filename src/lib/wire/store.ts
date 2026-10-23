@@ -86,6 +86,7 @@ declare global {
       selectScript: () => Promise<string | null>;
       selectPython: () => Promise<string | null>;
       getDefaultScript: () => Promise<string | null>;
+      openBotLog: (port: number) => Promise<{ ok: boolean; error?: string }>;
       startBot: (config: { scriptPath: string; port: number; pythonPath?: string }) => Promise<{ ok: boolean; error?: string }>;
       stopBot: (port: number) => Promise<{ ok: boolean; error?: string }>;
     };
