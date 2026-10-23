@@ -315,7 +315,7 @@ function Thread({
             {bot.typing ? (
               <span>typing</span>
             ) : bot.source === "bridge" ? (
-              bot.online ? "live script" : "script offline"
+              bot.online ? "online" : "offline"
             ) : bot.online ? (
               "bot"
             ) : (
@@ -730,7 +730,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
     <aside className="absolute inset-y-0 right-0 z-30 flex w-full min-h-0 flex-col border-l border-line bg-sidebar sm:w-80 xl:static">
       <div className="flex items-center justify-between px-4 py-3"><h2 className="font-semibold">Bot details</h2><button type="button" onClick={onClose} className="grid size-10 place-items-center rounded-full hover:bg-elevated" aria-label="Close details"><X className="size-5" /></button></div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-6">
-        <div className="flex items-center gap-3"><Avatar name={bot.name} online={bot.online} /><div><div className="font-medium">{bot.name}</div><div className={`text-sm ${bot.online ? "text-online" : "text-muted"}`}>{bot.online ? "Bridge connected" : "Waiting for running bot"}</div></div></div>
+        <div className="flex items-center gap-3"><Avatar name={bot.name} online={bot.online} /><div><div className="font-medium">{bot.name}</div><div className={`text-sm ${bot.online ? "text-online" : "text-muted"}`}>{bot.online ? "Online" : "Offline"}</div></div></div>
         <section className="rounded-md bg-bg p-3 text-sm">
           <div className="flex items-center justify-between gap-2"><h3 className="font-medium">Command menu</h3><button type="button" className="text-xs text-accent" onClick={() => { setCommandDraft(commandLines(bot.commands)); setEditingCommands((v) => !v); }}>{editingCommands ? "Cancel" : "Edit commands"}</button></div>
           {editingCommands ? <><p className="mt-1 text-xs text-muted">One command per line: /command | description.</p><textarea value={commandDraft} onChange={(e) => setCommandDraft(e.target.value)} rows={10} className="mt-2 w-full rounded-md bg-sidebar p-2 font-mono text-xs text-fg outline-none" /><button type="button" className="mt-2 rounded-md bg-accent-strong px-3 py-2 text-xs font-medium" onClick={() => { updateCommands(bot.id, parseCommandLines(commandDraft)); setEditingCommands(false); }}>Save commands</button></> : <p className="mt-1 text-xs text-muted">{(bot.commands ?? []).length} commands</p>}
