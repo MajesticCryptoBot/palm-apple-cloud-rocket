@@ -1486,36 +1486,6 @@ export function createBot(input: {
   return bot;
 }
 
-export function makeLocalBot(now = Date.now()): Bot {
-  const bot = createBot({
-    name: "ABinanceTradingBot (local)",
-    exchange: "Binance",
-    online: false,
-    now,
-    source: "bridge",
-    bridgePort: 47832,
-    commands: [...COMMANDS],
-  });
-  bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
-  bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
-  bot.isaac.symbol = "";
-  bot.isaac.orders = [];
-  bot.isaac.virtualUsdt = 0;
-  bot.isaac.allocated = 0;
-  bot.wallet = {};
-  bot.history = [];
-  bot.messages = [
-    {
-      id: uid("m"),
-      from: "service",
-      text: "Real local-script chat. Open Details and choose Connect / start script to run this bot through WIRE. Live notifications and command replies appear here; this chat does not simulate trades.",
-      ts: now,
-      tone: "service",
-    },
-  ];
-  return bot;
-}
-
 export function seedBots(_now = Date.now()): Bot[] {
   // A fresh install starts empty. Never bundle or auto-register a user script.
   return [];
