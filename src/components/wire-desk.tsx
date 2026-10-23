@@ -824,6 +824,14 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
         )}
         {bot.source === "bridge" && (
           <section className="rounded-md bg-bg p-3 text-sm">
+            <h3 className="font-medium">Live script pairs</h3>
+            <p className="mt-1 text-xs text-muted">USDT: {bot.lanes.USDT.symbol || "Not reported"}</p>
+            <p className="mt-1 text-xs text-muted">USDC: {bot.lanes.USDC.symbol || "Not reported"}</p>
+            <p className="mt-1 text-xs text-muted">ISAAC DCA: {bot.isaac.symbol || "Not reported"}</p>
+          </section>
+        )}
+        {bot.source === "bridge" && (
+          <section className="rounded-md bg-bg p-3 text-sm">
             <div className="flex items-center justify-between gap-2">
               <h3 className="font-medium">Bot commands</h3>
               <button type="button" className="text-xs text-accent" onClick={() => { setCommandDraft(commandLines(bot.commands)); setEditingCommands((v) => !v); }}>
