@@ -1498,6 +1498,7 @@ export function makeLocalBot(now = Date.now()): Bot {
   });
   bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
   bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+  bot.isaac.symbol = "";
   bot.isaac.orders = [];
   bot.isaac.virtualUsdt = 0;
   bot.isaac.allocated = 0;
