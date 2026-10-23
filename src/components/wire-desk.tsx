@@ -277,7 +277,7 @@ function Thread({
   const [hit, setHit] = useState(0);
   const [below, setBelow] = useState(0);
   const [atBottom, setAtBottom] = useState(true);
-  const quotes = laneQuotes(bot);
+  const quotes = bot.source === "bridge" ? [] : laneQuotes(bot);
   const needle = chatQuery.trim().toLowerCase();
   const hits = useMemo(
     () => (needle ? bot.messages.filter((m) => m.text.toLowerCase().includes(needle)).map((m) => m.id) : []),
@@ -767,8 +767,6 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   const [editingCommands, setEditingCommands] = useState(false);
   const [commandDraft, setCommandDraft] = useState(commandLines(bot.commands));
   const [connectionError, setConnectionError] = useState("");
-  const usdt = bot.lanes.USDT;
-  const usdc = bot.lanes.USDC;
 
   async function connectScript() {
     setConnectionError("");
@@ -860,35 +858,6 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
         )}
       </div>
     </aside>
-  );
-}
-
-function LaneBlock({
-  title,
-  symbol,
-  position,
-  allocated,
-  quote,
-}: {
-  title: string;
-  symbol: string | null;
-  position: Bot["lanes"]["USDT"]["position"];
-  allocated: number;
-  quote: { free: number; locked: number } | undefined;
-}) {
-  return (
-    <section className="rounded-md bg-bg p-3 text-sm">
-      <h3 className="font-medium">{title}</h3>
-      <p className="mt-1 text-muted">{symbol ?? "No pair set"}</p>
-      <p className="font-mono text-xs text-subtle tabular-nums">
-        Allocated ${allocated.toFixed(0)} · Free ${quote?.free.toFixed(2) ?? "0.00"}
-      </p>
-      {position && (
-        <p className="mt-1 font-mono text-xs tabular-nums text-fg">
-          {position.amount.toFixed(4)} @ {pxFmt(position.entry)} · rescue {position.rescueCount}/5 · {["RUN", "BREATHE", "LOCK", "STEEL", "HARVEST", "MOONSHOT"][position.phase]}
-        </p>
-      )}
-    </section>
   );
 }
 
