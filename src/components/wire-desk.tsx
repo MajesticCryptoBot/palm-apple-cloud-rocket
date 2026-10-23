@@ -779,6 +779,8 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
       configureBot(bot.id, { scriptPath });
     }
     if (bot.online) {
+      const confirmed = window.confirm("Stopping this script also stops its automated trading logic. Any open exchange positions remain open but will no longer be managed by this process. Stop it?");
+      if (!confirmed) return;
       const result = await window.wire?.stopBot(bot.bridgePort ?? 47832);
       if (result && !result.ok) setConnectionError(result.error || "Could not stop this WIRE-launched script.");
       return;
