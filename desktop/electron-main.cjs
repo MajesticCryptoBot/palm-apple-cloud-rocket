@@ -64,6 +64,10 @@ function registerIpc() {
     return result.canceled ? null : result.filePaths[0] || null;
   });
   ipcMain.handle("wire:default-script", () => getDefaultScriptPath());
+  ipcMain.handle("wire:select-python", async () => {
+    const result = await dialog.showOpenDialog({ title: "Choose the Python interpreter for this bot", properties: ["openFile"], filters: [{ name: "Python executable", extensions: ["exe"] }] });
+    return result.canceled ? null : result.filePaths[0] || null;
+  });
   ipcMain.handle("wire:start-bot", async (_event, config) => {
     const scriptPath = String(config?.scriptPath || "");
     const port = Number(config?.port);
@@ -73,7 +77,8 @@ function registerIpc() {
     if (health?.connected) return { ok: true, alreadyRunning: true };
     const existing = runningBots.get(port);
     if (existing && !existing.killed) return { ok: true, starting: true };
-    const python = findPython(scriptPath);
+    const selectedPython = String(config?.pythonPath || "");
+    const python = selectedPython && fs.existsSync(selectedPython) ? selectedPython : findPython(scriptPath);
     if (!python) {
       return {
         ok: false,
