@@ -139,6 +139,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    }
-  }
+    },
+    "artifactName": "Wire-Setup-${version}-x64.exe"
+  },
+  "version": "1.0.1",
+  "description": "Private local desktop chat for managing Python bots",
+  "author": "MajesticCryptoBot"
 }
