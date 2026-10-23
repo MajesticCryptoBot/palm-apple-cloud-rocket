@@ -112,6 +112,7 @@ export function Desk() {
   const [listMode, setListMode] = useState(true);
   const [adding, setAdding] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [botfatherOpen, setBotfatherOpen] = useState(false);
 
   const active = bots.find((b) => b.id === activeId) ?? null;
 
@@ -185,6 +186,10 @@ export function Desk() {
           </label>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
+          <button type="button" onClick={() => { setBotfatherOpen(true); setListMode(false); }} className={`flex w-full items-center gap-3 border-b border-line px-3 py-3 text-left ${botfatherOpen ? "bg-bubble-out" : "hover:bg-elevated"}`}>
+            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-accent-strong text-fg"><BotIcon className="size-6" /></span>
+            <span className="min-w-0 flex-1"><span className="block font-medium">BotFather</span><span className="block truncate text-sm text-muted">Create bots · manage commands</span></span>
+          </button>
           {shown.length === 0 && <p className="px-4 py-6 text-sm text-muted">No bots match that search.</p>}
           {shown.map((bot) => (
             <ChatRow
@@ -193,6 +198,7 @@ export function Desk() {
               active={bot.id === activeId}
               onPick={() => {
                 setActive(bot.id);
+                setBotfatherOpen(false);
                 setListMode(false);
               }}
             />
@@ -201,7 +207,9 @@ export function Desk() {
       </aside>
 
       <section className={`${listMode ? "hidden" : "flex"} min-h-0 min-w-0 flex-1 flex-col md:flex`}>
-        {active ? (
+        {botfatherOpen ? (
+          <BotFatherChat bots={bots} onBack={() => setListMode(true)} onCreate={() => setAdding(true)} onOpenBot={(id) => { setActive(id); setBotfatherOpen(false); }} />
+        ) : active ? (
           <Thread
             bot={active}
             sound={sound}
@@ -226,7 +234,7 @@ export function Desk() {
         )}
       </section>
 
-      {active && infoOpen && (
+      {active && !botfatherOpen && infoOpen && (
         <>
           <button
             type="button"
@@ -241,6 +249,38 @@ export function Desk() {
       {adding && <BotFatherDialog onClose={() => setAdding(false)} />}
       {settingsOpen && <WireSettings botId={active?.id ?? ""} onClose={() => setSettingsOpen(false)} />}
     </div>
+  );
+}
+
+function BotFatherChat({ bots, onBack, onCreate, onOpenBot }: { bots: Bot[]; onBack: () => void; onCreate: () => void; onOpenBot: (id: string) => void }) {
+  return (
+    <section className="flex min-h-0 flex-1 flex-col bg-bg">
+      <header className="flex shrink-0 items-center gap-3 border-b border-line bg-sidebar px-4 py-3">
+        <button type="button" onClick={onBack} className="grid size-9 place-items-center rounded-full text-muted hover:bg-elevated md:hidden" aria-label="Back to chats"><ChevronLeft className="size-5" /></button>
+        <span className="grid size-10 place-items-center rounded-full bg-accent-strong"><BotIcon className="size-5" /></span>
+        <div className="min-w-0 flex-1"><h2 className="font-semibold">BotFather</h2><p className="text-xs text-online">WIRE bot manager · local scripts only</p></div>
+      </header>
+      <div className="thread-bg min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
+        <div className="mx-auto flex max-w-2xl flex-col gap-4">
+          <div className="bubble bubble-in has-tail mr-auto max-w-[90%] rounded-xl bg-bubble-in px-4 py-3 text-sm shadow-sm">
+            <p className="font-semibold">Welcome to BotFather</p>
+            <p className="mt-2">I help you register and manage your own local Python scripts in WIRE. No trading bot is bundled with WIRE, and no script is started until you explicitly add it and choose Connect / start.</p>
+            <p className="mt-3 text-muted">Choose an action below. Your script remains on your PC.</p>
+          </div>
+          <div className="ml-auto max-w-[90%] rounded-xl rounded-br-sm bg-bubble-out px-4 py-3 text-sm">
+            <p className="font-medium">Available commands</p>
+            <p className="mt-2 font-mono">/newbot</p><p className="text-xs text-muted">Register a new Python script</p>
+            <p className="mt-3 font-mono">/mybots</p><p className="text-xs text-muted">View scripts already registered in WIRE</p>
+          </div>
+          <div className="bubble bubble-in has-tail mr-auto w-full max-w-[90%] rounded-xl bg-bubble-in px-4 py-4 text-sm">
+            <p className="font-semibold">Your registered bots ({bots.length})</p>
+            {bots.length ? <div className="mt-3 space-y-2">{bots.map((bot) => <button key={bot.id} onClick={() => onOpenBot(bot.id)} className="flex w-full items-center gap-3 rounded-lg bg-bg/70 p-3 text-left hover:bg-elevated"><span className={`size-2.5 rounded-full ${bot.online ? "bg-online" : "bg-subtle"}`} /><span className="min-w-0 flex-1"><span className="block truncate font-medium">{bot.name}</span><span className="block truncate text-xs text-muted">{bot.scriptPath || "No script selected"} · {bot.online ? "connected" : "not running"}</span></span><span className="text-xs text-accent">Open</span></button>)}</div> : <p className="mt-2 text-muted">No bots registered yet. Start with /newbot.</p>}
+            <button onClick={onCreate} className="mt-4 rounded-lg bg-accent-strong px-4 py-2.5 font-medium text-fg">/newbot · Create bot chat</button>
+          </div>
+        </div>
+      </div>
+      <div className="border-t border-line bg-sidebar px-4 py-3 text-xs text-muted">Commands sent here configure WIRE; trading commands are delivered to the selected Python script chat.</div>
+    </section>
   );
 }
 
