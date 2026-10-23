@@ -584,6 +584,16 @@ function Composer({ bot }: { bot: Bot }) {
     setMenuForced(false);
   }
 
+  function chooseCommand(name: string) {
+    if (["/pair", "/pair2", "/mb", "/mb2", "/buy_price", "/buy_price2"].includes(name)) {
+      setDraft(name + " ");
+      setMenuForced(false);
+      inputRef.current?.focus();
+      return;
+    }
+    submit(name);
+  }
+
   function onKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
     const navigating = showMenu && matches.length && (filtering || !draft);
     if (navigating) {
@@ -615,7 +625,7 @@ function Composer({ bot }: { bot: Bot }) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (filtering && matches.length) {
-        submit(matches[Math.min(menuIndex, matches.length - 1)]?.name ?? draft);
+        chooseCommand(matches[Math.min(menuIndex, matches.length - 1)]?.name ?? draft);
         return;
       }
       submit(draft);
@@ -631,7 +641,7 @@ function Composer({ bot }: { bot: Bot }) {
               <button
                 type="button"
                 onMouseEnter={() => setMenuIndex(i)}
-                onClick={() => submit(cmd.name)}
+                onClick={() => chooseCommand(cmd.name)}
                 className={`flex w-full items-baseline gap-3 px-3 py-2.5 text-left ${i === menuIndex ? "bg-elevated" : ""}`}
               >
                 <span className={`w-40 shrink-0 font-medium ${cmd.danger ? "text-danger" : "text-fg"}`}>{cmd.name}</span>
