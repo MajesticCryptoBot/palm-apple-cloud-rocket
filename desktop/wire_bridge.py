@@ -172,15 +172,6 @@ class Bridge:
 
             def do_GET(self) -> None:
                 path = self.path.split("?", 1)[0]
-                if path in ("/", "/index.html"):
-                    body = load_desk().encode("utf-8")
-                    self.send_response(200)
-                    self._cors()
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
-                    return
                 if path == "/health":
                     self._json(200, {"ok": True, "connected": bridge.connected and bridge.app is not None})
                     return
@@ -226,13 +217,6 @@ class Bridge:
 
 
 BRIDGE = Bridge()
-
-
-def load_desk() -> str:
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    path = os.path.join(base, "desk.html")
-    with open(path, "r", encoding="utf-8") as handle:
-        return handle.read()
 
 
 def install_patches() -> None:
