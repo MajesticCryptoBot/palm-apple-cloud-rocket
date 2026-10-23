@@ -11,6 +11,7 @@ import {
   type Bot,
   type CommandSpec,
   type Exchange,
+  COMMANDS,
   type Message,
   type Reply,
   type Tone,
@@ -28,8 +29,8 @@ type DeskState = {
   toggleInfo: () => void;
   send: (text: string) => void;
   toggleOnline: (id: string) => void;
-  addBot: (config: { name: string; exchange: Exchange; scriptPath: string; bridgePort: number; commands: CommandSpec[] }) => void;
-  configureBot: (id: string, config: { scriptPath?: string; bridgePort?: number }) => void;
+  addBot: (config: { name: string; exchange: Exchange; scriptPath: string; pythonPath?: string; bridgePort: number; commands: CommandSpec[] }) => void;
+  configureBot: (id: string, config: { scriptPath?: string; pythonPath?: string; bridgePort?: number }) => void;
   updateCommands: (id: string, commands: CommandSpec[]) => void;
   removeBot: (id: string) => void;
   tickAll: () => void;
@@ -83,8 +84,9 @@ declare global {
   interface Window {
     wire?: {
       selectScript: () => Promise<string | null>;
+      selectPython: () => Promise<string | null>;
       getDefaultScript: () => Promise<string | null>;
-      startBot: (config: { scriptPath: string; port: number }) => Promise<{ ok: boolean; error?: string }>;
+      startBot: (config: { scriptPath: string; port: number; pythonPath?: string }) => Promise<{ ok: boolean; error?: string }>;
       stopBot: (port: number) => Promise<{ ok: boolean; error?: string }>;
     };
   }
@@ -190,7 +192,7 @@ export const useDesk = create<DeskState>()(
         if (isBridge(bot)) {
           if (bot.scriptPath) {
             if (bot.online) void window.wire?.stopBot(bot.bridgePort ?? 47832);
-            else void window.wire?.startBot({ scriptPath: bot.scriptPath, port: bot.bridgePort ?? 47832 });
+            else void window.wire?.startBot({ scriptPath: bot.scriptPath, port: bot.bridgePort ?? 47832, pythonPath: bot.pythonPath });
           }
           bridgeUpByPort.delete(bot.bridgePort ?? 47832);
           void pollBridge(set, get);
