@@ -28,15 +28,6 @@ function appFile(...parts) {
   return path.join(__dirname, "..", ...parts);
 }
 
-function getDefaultScriptPath() {
-  const home = os.homedir();
-  const candidates = [
-    path.join(home, "Desktop", "IG", "ABinanceTradingBot.py"),
-    "C:\\Users\\pauld\\Desktop\\IG\\ABinanceTradingBot.py",
-  ];
-  return candidates.find((p) => fs.existsSync(p)) || null;
-}
-
 function findPython(scriptPath) {
   const dir = path.dirname(scriptPath);
   const candidates = [
