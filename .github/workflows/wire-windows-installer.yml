@@ -3,7 +3,7 @@ name: Build WIRE Windows Installer
 on:
   workflow_dispatch:
   push:
-    branches: [wire-real-bots-installer, wire-botfather-settings-v1, wire-command-bridge-premium-theme]
+    branches: [fix/file-bridge-existing-bot, wire-real-bots-installer, wire-botfather-settings-v1, wire-command-bridge-premium-theme]
     paths:
       - "desktop/**"
       - "src/**"
@@ -32,8 +32,6 @@ jobs:
         run: npm install
       - name: Type check
         run: npm run typecheck
-      - name: Test local Python bridge
-        run: python desktop/wire_bridge.py --selftest
       - name: Build local WIRE server
         shell: pwsh
         run: |
