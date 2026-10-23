@@ -1507,7 +1507,7 @@ export function makeLocalBot(now = Date.now()): Bot {
     {
       id: uid("m"),
       from: "service",
-      text: "Real script chat. On this PC run desktop\\Wire.bat, then start the bot through it. Patterns, fills, trailing stops, and rescues appear here as they happen. This chat does not simulate trades.",
+      text: "Real local-script chat. Open Details and choose Connect / start script to run this bot through WIRE. Live notifications and command replies appear here; this chat does not simulate trades.",
       ts: now,
       tone: "service",
     },
