@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = "127.0.0.1"
 PORT = 47832
+NO_BROWSER = False
 
 
 class Bridge:
@@ -280,7 +281,8 @@ def run_script(path: str) -> None:
         BRIDGE.publish(f"Could not patch Telegram: {exc}")
     print(f"Wire listening on http://{HOST}:{PORT}/")
     print(f"Running {script}")
-    launch_browser()
+    if not NO_BROWSER:
+        launch_browser()
     runpy.run_path(script, run_name="__main__")
 
 
@@ -313,7 +315,19 @@ def selftest() -> None:
 
 
 def main() -> None:
+    global PORT, NO_BROWSER
     args = sys.argv[1:]
+    if "--port" in args:
+        index = args.index("--port")
+        if index + 1 >= len(args):
+            raise SystemExit("Usage: --port 47832")
+        try:
+            PORT = int(args[index + 1])
+        except ValueError as exc:
+            raise SystemExit("--port must be an integer") from exc
+        if not 1024 <= PORT <= 65535:
+            raise SystemExit("--port must be between 1024 and 65535")
+    NO_BROWSER = "--no-browser" in args
     if "--selftest" in args:
         selftest()
         return
@@ -330,7 +344,7 @@ def main() -> None:
     BRIDGE.start()
     print(f"Wire listening on http://{HOST}:{PORT}/")
     print("Start the bot with: py -3 wire_bridge.py --run ABinanceTradingBot.py")
-    if "--desktop" in args or not args:
+    if not NO_BROWSER and ("--desktop" in args or not args):
         launch_browser()
     try:
         while True:
