@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   ArrowDown,
+  Bot as BotIcon,
   CheckCheck,
   ChevronDown,
   ChevronLeft,
@@ -11,6 +12,7 @@ import {
   PanelRight,
   Plus,
   Search,
+  Settings,
   Send,
   Volume2,
   VolumeX,
@@ -18,6 +20,7 @@ import {
 } from "lucide-react";
 import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type CommandSpec, type Exchange, type Message } from "@/lib/wire/engine";
 import { useDesk } from "@/lib/wire/store";
+import { WireSettings } from "@/components/wire-settings";
 
 function parseCommandLines(raw: string): CommandSpec[] {
   return raw.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
@@ -108,6 +111,7 @@ export function Desk() {
   const toggleInfo = useDesk((s) => s.toggleInfo);
   const [listMode, setListMode] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const active = bots.find((b) => b.id === activeId) ?? null;
 
@@ -148,14 +152,26 @@ export function Desk() {
             <h1 className="text-lg font-semibold tracking-tight">Wire</h1>
             <p className="text-xs text-muted">Private desk</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="grid size-10 place-items-center rounded-full bg-elevated text-accent hover:bg-bubble-out"
-            aria-label="Add a bot"
-          >
-            <Plus className="size-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="grid size-10 place-items-center rounded-full bg-elevated text-accent hover:bg-bubble-out"
+              aria-label="Open BotFather to add a bot"
+              title="BotFather · Add/manage scripts"
+            >
+              <BotIcon className="size-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent"
+              aria-label="Settings"
+              title="Settings"
+            >
+              <Settings className="size-5" />
+            </button>
+          </div>
         </div>
         <div className="px-3 pb-2">
           <label className="flex items-center gap-2 rounded-full bg-bg px-3 py-2 text-sm text-muted">
@@ -222,7 +238,8 @@ export function Desk() {
         </>
       )}
 
-      {adding && <AddBotDialog onClose={() => setAdding(false)} />}
+      {adding && <BotFatherDialog onClose={() => setAdding(false)} />}
+      {settingsOpen && <WireSettings botId={active?.id ?? ""} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
@@ -277,6 +294,7 @@ function Thread({
   const [hit, setHit] = useState(0);
   const [below, setBelow] = useState(0);
   const [atBottom, setAtBottom] = useState(true);
+  const [wallpaper, setWallpaper] = useState("");
   const quotes = bot.source === "bridge" ? [] : laneQuotes(bot);
   const needle = chatQuery.trim().toLowerCase();
   const hits = useMemo(
@@ -302,6 +320,14 @@ function Thread({
     setAtBottom(near);
     if (near) setBelow(0);
   }
+
+  useEffect(() => {
+    const readWallpaper = () => { try { setWallpaper((JSON.parse(localStorage.getItem("wire-wallpapers") || "{}") as Record<string, string>)[bot.id] || ""); } catch { setWallpaper(""); } };
+    readWallpaper();
+    const onWallpaper = (event: Event) => { const detail = (event as CustomEvent<{ botId: string; dataUrl: string }>).detail; if (detail?.botId === bot.id) setWallpaper(detail.dataUrl || ""); };
+    window.addEventListener("wire-wallpaper-change", onWallpaper);
+    return () => window.removeEventListener("wire-wallpaper-change", onWallpaper);
+  }, [bot.id]);
 
   useEffect(() => {
     seen.current = bot.messages.length;
@@ -472,7 +498,7 @@ function Thread({
       )}
 
       <div className="relative min-h-0 flex-1">
-        <div ref={scroller} onScroll={onScroll} className="thread-bg absolute inset-0 overflow-y-auto px-3 py-3 md:px-8">
+        <div ref={scroller} onScroll={onScroll} className="thread-bg absolute inset-0 overflow-y-auto px-3 py-3 md:px-8" style={wallpaper ? { backgroundImage: `linear-gradient(rgba(8,12,18,.38), rgba(8,12,18,.38)), url("${wallpaper}")`, backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "fixed" } : undefined}>
           <div className="mx-auto flex max-w-3xl flex-col">
             {bot.messages.map((m, i) => {
               const prev = bot.messages[i - 1];
@@ -863,7 +889,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   );
 }
 
-function AddBotDialog({ onClose }: { onClose: () => void }) {
+function BotFatherDialog({ onClose }: { onClose: () => void }) {
   const addBot = useDesk((s) => s.addBot);
   const existingBots = useDesk((s) => s.bots);
   const [name, setName] = useState("");
@@ -890,8 +916,8 @@ function AddBotDialog({ onClose }: { onClose: () => void }) {
           onClose();
         }}
       >
-        <h2 className="text-lg font-semibold">Add a bot</h2>
-        <p className="mt-1 text-sm text-muted">Register a real local Python script. Replies and live notifications will come from that script, not a simulator.</p>
+        <h2 className="text-lg font-semibold">BotFather</h2>
+        <p className="mt-1 text-sm text-muted">Your WIRE bot manager. Register any local Python script, then connect it to its own chat. WIRE does not include a trading script or simulated bot.</p>
         <label className="mt-4 block text-xs font-medium text-muted">
           Bot name
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="My trading bot" className="mt-1 w-full rounded-md bg-bg px-3 py-2.5 text-sm text-fg outline-none" />
@@ -930,7 +956,7 @@ function AddBotDialog({ onClose }: { onClose: () => void }) {
         {error && <p className="mt-2 text-xs text-danger">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-sm text-muted">Cancel</button>
-          <button type="submit" className="rounded-md bg-accent-strong px-4 py-2 text-sm font-medium text-fg">Add bot</button>
+          <button type="submit" className="rounded-md bg-accent-strong px-4 py-2 text-sm font-medium text-fg">Create bot chat</button>
         </div>
       </form>
     </div>
