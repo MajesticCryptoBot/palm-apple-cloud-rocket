@@ -68,16 +68,52 @@ class Bridge:
         except RuntimeError:
             self.loop = None
         self.connected = True
+        self.user_id = self._discover_user_id()
         for mod in list(sys.modules.values()):
-            raw = getattr(mod, "TELEGRAM_USER_ID", None)
-            if raw:
-                try:
-                    self.user_id = int(raw)
-                except (TypeError, ValueError):
-                    pass
             if hasattr(mod, "SYMBOL") and hasattr(mod, "SYMBOL2"):
                 self.state_mod = mod
         self.publish("Wire attached. This script is live in the desk.")
+
+    def _discover_user_id(self) -> int:
+        """Match the local command user to IDs commonly used by Telegram bot scripts."""
+        env_value = os.environ.get("WIRE_COMMAND_USER_ID", "").strip()
+        if env_value:
+            try:
+                return int(env_value)
+            except ValueError:
+                pass
+
+        priority = (
+            "TELEGRAM_USER_ID", "TELEGRAM_ADMIN_ID", "ADMIN_USER_ID",
+            "OWNER_USER_ID", "AUTHORIZED_USER_ID", "ALLOWED_USER_ID",
+            "ADMIN_ID", "OWNER_ID", "USER_ID", "TELEGRAM_CHAT_ID", "CHAT_ID",
+        )
+        modules = [m for m in list(sys.modules.values()) if m is not None]
+        for name in priority:
+            for mod in modules:
+                try:
+                    raw = getattr(mod, name, None)
+                    if isinstance(raw, (int, str)) and str(raw).strip().lstrip("-").isdigit():
+                        value = int(raw)
+                        if value:
+                            return value
+                except Exception:
+                    continue
+
+        # Some scripts define an allow-list rather than one owner constant.
+        for mod in modules:
+            for name in ("ALLOWED_USER_IDS", "AUTHORIZED_USERS", "ADMIN_IDS", "OWNER_IDS"):
+                try:
+                    values = getattr(mod, name, None)
+                    if isinstance(values, (list, tuple, set)):
+                        for raw in values:
+                            if isinstance(raw, (int, str)) and str(raw).strip().lstrip("-").isdigit():
+                                value = int(raw)
+                                if value:
+                                    return value
+                except Exception:
+                    continue
+        return 1
 
     def snapshot(self) -> dict:
         mod = self.state_mod
@@ -104,12 +140,16 @@ class Bridge:
         try:
             update = self._update(text)
             await self.app.process_update(update)
+            # A few existing bots schedule their Telegram reply with create_task().
+            # Give those already-scheduled callbacks a short chance to finish before
+            # the command capture window closes.
+            await asyncio.sleep(0.35)
         except Exception as exc:
             caught.append(f"Command failed: {exc}")
         finally:
             with self._lock:
                 self._cmd_replies = None
-        return caught or ["Command accepted. The script sent no reply text."]
+        return caught or ["No command handler reply was captured. Check that this command is registered and that its user/owner filter accepts WIRE's command identity."]
 
     def _update(self, text: str):
         from datetime import datetime, timezone
@@ -245,11 +285,29 @@ def install_patches() -> None:
 
         async def send_message(self, *args, **kwargs):
             text = kwargs.get("text", args[1] if len(args) > 1 else "")
+            capture = BRIDGE._cmd_replies
+            if capture is not None:
+                BRIDGE.publish("" if text is None else str(text))
+                # Behave like python-telegram-bot: reply_text/send_message normally
+                # returns a Message. Returning None can break handlers that inspect
+                # the result after sending a reply.
+                from datetime import datetime, timezone
+                from telegram import Chat, Message
+
+                chat_id = kwargs.get("chat_id", args[0] if args else BRIDGE.user_id or 1)
+                try:
+                    synthetic_chat_id = int(chat_id)
+                except (TypeError, ValueError):
+                    synthetic_chat_id = BRIDGE.user_id or 1
+                message = Message(
+                    message_id=BRIDGE._update_id + len(capture),
+                    date=datetime.now(timezone.utc),
+                    chat=Chat(id=synthetic_chat_id, type=Chat.PRIVATE),
+                    text=str(text or ""),
+                )
+                message.set_bot(self)
+                return message
             BRIDGE.publish("" if text is None else str(text))
-            # WIRE command replies are already delivered to the local chat. Do
-            # not make command handling depend on a second Telegram API request.
-            if BRIDGE._cmd_replies is not None:
-                return None
             return await orig_send(self, *args, **kwargs)
 
         send_message._wire = True  # type: ignore[attr-defined]
