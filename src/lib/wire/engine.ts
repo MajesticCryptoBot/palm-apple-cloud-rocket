@@ -30,7 +30,6 @@ export const COMMANDS: CommandSpec[] = [
   { name: "/reset_state2", hint: "Clear the USDC lane", group: "USDC", danger: true },
   { name: "/isaac_status", hint: "Isaac DCA panel", group: "Isaac" },
   { name: "/emergency_isaac", hint: "Sell Isaac and reset the cycle", group: "Isaac", danger: true },
-  { name: "/cancel", hint: "Abort the current question", group: "Session" },
 ];
 
 export const BASES = [
