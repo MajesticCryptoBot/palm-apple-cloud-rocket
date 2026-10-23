@@ -140,7 +140,7 @@ async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => voi
             USDT: { ...bot.lanes.USDT, symbol: snapshot.symbol ?? null, lastSymbol: snapshot.symbol ?? bot.lanes.USDT.lastSymbol, allocated: Number(snapshot.main_usdt ?? bot.lanes.USDT.allocated), rescuePool: Number(snapshot.rescue_usdt ?? bot.lanes.USDT.rescuePool) },
             USDC: { ...bot.lanes.USDC, symbol: snapshot.symbol2 ?? null, lastSymbol: snapshot.symbol2 ?? bot.lanes.USDC.lastSymbol, allocated: Number(snapshot.main_usdc ?? bot.lanes.USDC.allocated), rescuePool: Number(snapshot.rescue_usdc ?? bot.lanes.USDC.rescuePool) },
           },
-          isaac: { ...bot.isaac, symbol: snapshot.symbol ?? bot.isaac.symbol, allocated: Number(snapshot.isaac_allocated ?? bot.isaac.allocated) },
+          isaac: { ...bot.isaac, allocated: Number(snapshot.isaac_allocated ?? bot.isaac.allocated) },
         } : {};
         if (!extra.length) return { ...bot, ...liveState, online: polled.connected, lastSeen: polled.connected ? now : bot.lastSeen };
         const active = bot.id === activeId;
@@ -320,7 +320,7 @@ export const useDesk = create<DeskState>()(
                     online: connected,
                     lastSeen: now,
                     lanes,
-                    isaac: snapshot ? { ...b.isaac, symbol: snapshot.symbol ?? b.isaac.symbol, allocated: Number(snapshot.isaac_allocated ?? b.isaac.allocated) } : b.isaac,
+                    isaac: snapshot ? { ...b.isaac, allocated: Number(snapshot.isaac_allocated ?? b.isaac.allocated) } : b.isaac,
                     messages: [...b.messages.map((m) => (m.id === job.id ? { ...m, pending: false } : m)), ...newMessages].slice(-500),
                     inbox: b.inbox.filter((j) => j.id !== job.id),
                     typing: false,
