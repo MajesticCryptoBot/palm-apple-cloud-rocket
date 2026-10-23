@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, Notification } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -72,7 +72,6 @@ function registerIpc() {
     });
     return result.canceled ? null : result.filePaths[0] || null;
   });
-  ipcMain.handle("wire:default-script", () => getDefaultScriptPath());
   ipcMain.handle("wire:open-bot-log", async (_event, rawPort) => {
     const port = Number(rawPort);
     if (!Number.isInteger(port) || port < 47832 || port > 47999) return { ok: false, error: "Invalid bot port." };
@@ -81,6 +80,25 @@ function registerIpc() {
     if (!fs.existsSync(logPath)) fs.writeFileSync(logPath, "WIRE has not started this bot yet.\n", "utf8");
     const error = await shell.openPath(logPath);
     return error ? { ok: false, error } : { ok: true };
+  });
+  ipcMain.handle("wire:select-wallpaper", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "Choose a chat wallpaper",
+      properties: ["openFile"],
+      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const filePath = result.filePaths[0];
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : ext === ".gif" ? "image/gif" : "image/jpeg";
+    return "data:" + mime + ";base64," + fs.readFileSync(filePath).toString("base64");
+  });
+  ipcMain.handle("wire:show-notification", (_event, payload) => {
+    const title = String(payload?.title || "WIRE").slice(0, 100);
+    const body = String(payload?.body || "").slice(0, 500);
+    if (!Notification.isSupported() || !body) return { ok: false };
+    new Notification({ title, body, silent: Boolean(payload?.silent) }).show();
+    return { ok: true };
   });
   ipcMain.handle("wire:select-python", async () => {
     const result = await dialog.showOpenDialog({ title: "Choose the Python interpreter for this bot", properties: ["openFile"], filters: [{ name: "Python executable", extensions: ["exe"] }] });
