@@ -1,5 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
-const { fork, spawn, execFile } = require("node:child_process");
+const { spawn, execFile } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
@@ -159,8 +159,7 @@ async function waitForLocalApp() {
 function startLocalServer() {
   const entry = appFile(".output", "server", "index.mjs");
   if (!fs.existsSync(entry)) throw new Error("WIRE local web server is missing from the installation.");
-  serverProcess = fork(entry, [], {
-    execPath: process.execPath,
+  serverProcess = spawn(process.execPath, [entry], {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", HOST: "127.0.0.1", NITRO_HOST: "127.0.0.1", PORT: String(APP_PORT), NITRO_PORT: String(APP_PORT), NODE_ENV: "production" },
     stdio: "ignore",
     detached: false,
