@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = "127.0.0.1"
 PORT = 47832
+NO_BROWSER = False
 
 
 class Bridge:
@@ -149,10 +150,12 @@ class Bridge:
                 return
 
             def _cors(self) -> None:
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Private-Network", "true")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                origin = self.headers.get("Origin")
+                if origin == "http://127.0.0.1:47831":
+                    self.send_header("Access-Control-Allow-Origin", origin)
+                    self.send_header("Access-Control-Allow-Private-Network", "true")
+                    self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                    self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
             def _json(self, code: int, payload: dict) -> None:
                 raw = json.dumps(payload).encode("utf-8")
@@ -171,15 +174,6 @@ class Bridge:
 
             def do_GET(self) -> None:
                 path = self.path.split("?", 1)[0]
-                if path in ("/", "/index.html"):
-                    body = load_desk().encode("utf-8")
-                    self.send_response(200)
-                    self._cors()
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
-                    return
                 if path == "/health":
                     self._json(200, {"ok": True, "connected": bridge.connected and bridge.app is not None})
                     return
@@ -201,6 +195,10 @@ class Bridge:
                 self._json(404, {"ok": False, "error": "Not found"})
 
             def do_POST(self) -> None:
+                origin = self.headers.get("Origin")
+                if origin and origin != "http://127.0.0.1:47831":
+                    self._json(403, {"ok": False, "blocked": True, "replies": ["Request origin is not allowed."]})
+                    return
                 path = self.path.split("?", 1)[0]
                 if path != "/command":
                     self._json(404, {"ok": False, "error": "Not found"})
@@ -227,13 +225,6 @@ class Bridge:
 BRIDGE = Bridge()
 
 
-def load_desk() -> str:
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    path = os.path.join(base, "desk.html")
-    with open(path, "r", encoding="utf-8") as handle:
-        return handle.read()
-
-
 def install_patches() -> None:
     from telegram import Bot
     from telegram.ext import Application
@@ -253,8 +244,12 @@ def install_patches() -> None:
         orig_send = Bot.send_message
 
         async def send_message(self, *args, **kwargs):
-            text = kwargs.get("text", args[0] if args else "")
+            text = kwargs.get("text", args[1] if len(args) > 1 else "")
             BRIDGE.publish("" if text is None else str(text))
+            # WIRE command replies are already delivered to the local chat. Do
+            # not make command handling depend on a second Telegram API request.
+            if BRIDGE._cmd_replies is not None:
+                return None
             return await orig_send(self, *args, **kwargs)
 
         send_message._wire = True  # type: ignore[attr-defined]
@@ -280,8 +275,14 @@ def run_script(path: str) -> None:
         BRIDGE.publish(f"Could not patch Telegram: {exc}")
     print(f"Wire listening on http://{HOST}:{PORT}/")
     print(f"Running {script}")
-    launch_browser()
-    runpy.run_path(script, run_name="__main__")
+    if not NO_BROWSER:
+        launch_browser()
+    bridge_argv = sys.argv
+    sys.argv = [script]
+    try:
+        runpy.run_path(script, run_name="__main__")
+    finally:
+        sys.argv = bridge_argv
 
 
 def selftest() -> None:
@@ -313,7 +314,19 @@ def selftest() -> None:
 
 
 def main() -> None:
+    global PORT, NO_BROWSER
     args = sys.argv[1:]
+    if "--port" in args:
+        index = args.index("--port")
+        if index + 1 >= len(args):
+            raise SystemExit("Usage: --port 47832")
+        try:
+            PORT = int(args[index + 1])
+        except ValueError as exc:
+            raise SystemExit("--port must be an integer") from exc
+        if not 1024 <= PORT <= 65535:
+            raise SystemExit("--port must be between 1024 and 65535")
+    NO_BROWSER = "--no-browser" in args
     if "--selftest" in args:
         selftest()
         return
@@ -330,7 +343,7 @@ def main() -> None:
     BRIDGE.start()
     print(f"Wire listening on http://{HOST}:{PORT}/")
     print("Start the bot with: py -3 wire_bridge.py --run ABinanceTradingBot.py")
-    if "--desktop" in args or not args:
+    if not NO_BROWSER and ("--desktop" in args or not args):
         launch_browser()
     try:
         while True:

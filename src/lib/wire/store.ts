@@ -9,7 +9,9 @@ import {
   tickBot,
   uid,
   type Bot,
+  type CommandSpec,
   type Exchange,
+  COMMANDS,
   type Message,
   type Reply,
   type Tone,
@@ -27,7 +29,9 @@ type DeskState = {
   toggleInfo: () => void;
   send: (text: string) => void;
   toggleOnline: (id: string) => void;
-  addBot: (name: string, exchange: Exchange) => void;
+  addBot: (config: { name: string; exchange: Exchange; scriptPath: string; pythonPath?: string; bridgePort: number; commands: CommandSpec[] }) => void;
+  configureBot: (id: string, config: { scriptPath?: string; pythonPath?: string; bridgePort?: number }) => void;
+  updateCommands: (id: string, commands: CommandSpec[]) => void;
   removeBot: (id: string) => void;
   tickAll: () => void;
   drain: (id: string) => Promise<void>;
@@ -74,6 +78,20 @@ function soundFor(replies: Reply[], active: boolean, sound: boolean) {
 type ScriptSnapshot = { activePair?: string | null; activePairUSDC?: string | null; isaacPair?: string | null };
 
 export const BRIDGE_URL = "http://127.0.0.1:47832";
+export function bridgeUrl(bot: Bot): string { return `http://127.0.0.1:${bot.bridgePort ?? 47832}`; }
+
+declare global {
+  interface Window {
+    wire?: {
+      selectScript: () => Promise<string | null>;
+      selectPython: () => Promise<string | null>;
+      getDefaultScript: () => Promise<string | null>;
+      openBotLog: (port: number) => Promise<{ ok: boolean; error?: string }>;
+      startBot: (config: { scriptPath: string; port: number; pythonPath?: string }) => Promise<{ ok: boolean; error?: string }>;
+      stopBot: (port: number) => Promise<{ ok: boolean; error?: string }>;
+    };
+  }
+}
 
 export function isBridge(bot: Bot): boolean {
   return bot.source === "bridge" || bot.name === "ABinanceTradingBot (local)";
@@ -86,94 +104,83 @@ function toneFor(text: string): { tone: Tone; mono: boolean } {
   return { tone: alert ? "alert" : trade ? "trade" : "normal", mono: text.includes("\n") || text.startsWith("Spot Wallet") };
 }
 
-let liveSeq = 0;
+const liveSeqByPort = new Map<number, number>();
+const bridgeUpByPort = new Map<number, boolean>();
 let polling = false;
-let bridgeUp: boolean | null = null;
 
 async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => void, get: () => DeskState) {
   if (polling) return;
-  if (!get().bots.some(isBridge)) return;
+  const targets = get().bots.filter(isBridge);
+  if (!targets.length) return;
   polling = true;
   try {
-    let connected = false;
-    let reachable = false;
-    try {
-      const health = await fetch(`${BRIDGE_URL}/health`, { cache: "no-store" });
-      if (health.ok) {
-        reachable = true;
-        const data = (await health.json()) as { connected?: boolean };
-        connected = Boolean(data.connected);
-      }
-    } catch {
-      reachable = false;
-    }
-    let items: { text: string; ts?: number }[] = [];
-    if (reachable) {
+    const results = await Promise.all(targets.map(async (bot) => {
+      const port = bot.bridgePort ?? 47832;
+      let reachable = false;
+      let connected = false;
+      let items: { text: string; ts?: number }[] = [];
+      let snapshot: ScriptSnapshot | null = null;
       try {
-        const live = await fetch(`${BRIDGE_URL}/live?after=${liveSeq}`, { cache: "no-store" });
-        if (live.ok) {
-          const data = (await live.json()) as { latest?: number; items?: { text: string; ts?: number }[] };
-          if (typeof data.latest === "number") liveSeq = data.latest;
-          items = Array.isArray(data.items) ? data.items : [];
+        const health = await fetch(`http://127.0.0.1:${port}/health`, { cache: "no-store" });
+        if (health.ok) {
+          reachable = true;
+          connected = Boolean(((await health.json()) as { connected?: boolean }).connected);
+          const after = liveSeqByPort.get(port) ?? 0;
+          const live = await fetch(`http://127.0.0.1:${port}/live?after=${after}`, { cache: "no-store" });
+          if (live.ok) {
+            const data = (await live.json()) as { latest?: number; items?: { text: string; ts?: number }[] };
+            if (typeof data.latest === "number") liveSeqByPort.set(port, data.latest);
+            items = Array.isArray(data.items) ? data.items : [];
+          }
+          if (connected) {
+            try {
+              const snap = await fetch(`http://127.0.0.1:${port}/snapshot`, { cache: "no-store" });
+              if (snap.ok) snapshot = (await snap.json()) as ScriptSnapshot;
+            } catch { /* live notifications still work */ }
+          }
         }
-      } catch {
-        /* health already decided reachability */
-      }
-    }
-    const changed = bridgeUp !== connected;
-    bridgeUp = connected;
-    if (!items.length && !changed) return;
+      } catch { reachable = false; }
+      const previous = bridgeUpByPort.get(port);
+      bridgeUpByPort.set(port, connected);
+      return { id: bot.id, port, reachable, connected, changed: previous !== undefined && previous !== connected, items, snapshot };
+    }));
     const now = Date.now();
     const activeId = get().activeId;
     const sound = get().sound;
-    const replies: Reply[] = [];
+    const allReplies: Reply[] = [];
+    const byId = new Map(results.map((r) => [r.id, r]));
     set((s) => ({
-      bots: s.bots.map((b) => {
-        if (!isBridge(b)) return b;
+      bots: s.bots.map((bot) => {
+        if (!isBridge(bot)) return bot;
+        const result = byId.get(bot.id);
+        if (!result) return bot;
         const extra: Message[] = [];
-        if (changed) {
-          extra.push({
-            id: uid("m"),
-            from: "service",
-            text: connected
-              ? "Live script connected. Commands go to the bot. Fills, patterns, and trailing stops will show up here."
-              : reachable
-                ? "Wire is running, but the trading script is not attached yet."
-                : "Live script disconnected.",
-            ts: now,
-            tone: "service",
-          });
+        if (result.changed) {
+          extra.push({ id: uid("m"), from: "service", text: result.connected
+            ? "Live script connected. Commands now go to this local script."
+            : result.reachable ? "WIRE bridge is running, but this script is not attached." : "Local script bridge disconnected.", ts: now, tone: "service" });
         }
-        for (const it of items) {
-          const text = String(it.text || "");
+        for (const item of result.items) {
+          const text = String(item.text || "");
           if (!text) continue;
           const look = toneFor(text);
-          extra.push({
-            id: uid("m"),
-            from: "bot",
-            text,
-            ts: it.ts ? Math.round(Number(it.ts) * 1000) : now,
-            tone: look.tone,
-            mono: look.mono,
-          });
-          replies.push({ text, tone: look.tone, mono: look.mono });
+          extra.push({ id: uid("m"), from: "bot", text, ts: item.ts ? Math.round(Number(item.ts) * 1000) : now, tone: look.tone, mono: look.mono });
+          allReplies.push({ text, tone: look.tone, mono: look.mono });
         }
-        if (!extra.length) return { ...b, online: connected, lastSeen: connected ? now : b.lastSeen };
-        const active = b.id === activeId;
-        return {
-          ...b,
-          online: connected,
-          lastSeen: now,
-          messages: [...b.messages, ...extra].slice(-500),
-          unread: active ? 0 : b.unread + extra.filter((m) => m.from === "bot").length,
-        };
+        const liveState = result.snapshot ? {
+          lanes: {
+            USDT: { ...bot.lanes.USDT, symbol: result.snapshot.activePair ?? null, lastSymbol: result.snapshot.activePair ?? bot.lanes.USDT.lastSymbol },
+            USDC: { ...bot.lanes.USDC, symbol: result.snapshot.activePairUSDC ?? null, lastSymbol: result.snapshot.activePairUSDC ?? bot.lanes.USDC.lastSymbol },
+          },
+          isaac: { ...bot.isaac, symbol: result.snapshot.isaacPair ?? "" },
+        } : {};
+        if (!extra.length) return { ...bot, ...liveState, online: result.connected, lastSeen: result.connected ? now : bot.lastSeen };
+        const active = bot.id === activeId;
+        return { ...bot, ...liveState, online: result.connected, lastSeen: now, messages: [...bot.messages, ...extra].slice(-500), unread: active ? 0 : bot.unread + extra.filter((m) => m.from === "bot").length };
       }),
     }));
-    const activeBot = get().bots.find((b) => b.id === activeId);
-    soundFor(replies, Boolean(activeBot && isBridge(activeBot)), sound);
-  } finally {
-    polling = false;
-  }
+    soundFor(allReplies, targets.some((b) => b.id === activeId), sound);
+  } finally { polling = false; }
 }
 
 const seeded = seedBots();
@@ -198,7 +205,11 @@ export const useDesk = create<DeskState>()(
         const bot = get().bots.find((b) => b.id === id);
         if (!bot) return;
         if (isBridge(bot)) {
-          bridgeUp = null;
+          if (bot.scriptPath) {
+            if (bot.online) void window.wire?.stopBot(bot.bridgePort ?? 47832);
+            else void window.wire?.startBot({ scriptPath: bot.scriptPath, port: bot.bridgePort ?? 47832, pythonPath: bot.pythonPath });
+          }
+          bridgeUpByPort.delete(bot.bridgePort ?? 47832);
           void pollBridge(set, get);
           return;
         }
@@ -229,10 +240,20 @@ export const useDesk = create<DeskState>()(
         }));
         if (online) void get().drain(id);
       },
-      addBot: (name, exchange) => {
-        const bot = createBot({ name, exchange, online: true });
+      addBot: (config) => {
+        const bot = createBot({ ...config, online: false, source: "bridge" });
+        bot.wallet = {};
+        bot.history = [];
+        bot.messages = [{ id: uid("m"), from: "service", text: `Local script configured: ${config.scriptPath}. Start it from this chat’s Details panel.`, ts: Date.now(), tone: "service" }];
+        bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+        bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+        bot.isaac.orders = [];
+        bot.isaac.virtualUsdt = 0;
+        bot.isaac.allocated = 0;
         set((s) => ({ bots: [...s.bots, bot], activeId: bot.id }));
       },
+      configureBot: (id, config) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, ...config, source: "bridge" } : b) })),
+      updateCommands: (id, commands) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, commands } : b) })),
       removeBot: (id) =>
         set((s) => {
           const bots = s.bots.filter((b) => b.id !== id);
@@ -317,7 +338,7 @@ export const useDesk = create<DeskState>()(
               const ctrl = new AbortController();
               const timer = setTimeout(() => ctrl.abort(), 20000);
               try {
-                const response = await fetch(`${BRIDGE_URL}/command`, {
+                const response = await fetch(`${bridgeUrl(bot)}/command`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   cache: "no-store",
@@ -335,13 +356,13 @@ export const useDesk = create<DeskState>()(
                   ? data.replies.map((v) => String(v))
                   : [String(data.error || "The script returned no response.")];
                 try {
-                  const snap = await fetch(`${BRIDGE_URL}/snapshot`, { cache: "no-store" });
+                  const snap = await fetch(`${bridgeUrl(bot)}/snapshot`, { cache: "no-store" });
                   if (snap.ok) snapshot = (await snap.json()) as ScriptSnapshot;
                 } catch {
                   /* reply still stands */
                 }
               } catch {
-                replies = ["REAL SCRIPT NOT CONNECTED. Run desktop\\Wire.bat on this PC, then start the bot with it. This chat did not simulate the command."];
+                replies = ["REAL SCRIPT NOT CONNECTED. Use Details → Connect script. This chat did not simulate the command."];
                 blocked = true;
               } finally {
                 clearTimeout(timer);
@@ -357,8 +378,8 @@ export const useDesk = create<DeskState>()(
                   if (b.id !== id) return b;
                   const lanes = snapshot
                     ? {
-                        USDT: { ...b.lanes.USDT, symbol: snapshot.activePair || b.lanes.USDT.symbol, lastSymbol: snapshot.activePair || b.lanes.USDT.lastSymbol },
-                        USDC: { ...b.lanes.USDC, symbol: snapshot.activePairUSDC || b.lanes.USDC.symbol, lastSymbol: snapshot.activePairUSDC || b.lanes.USDC.lastSymbol },
+                        USDT: { ...b.lanes.USDT, symbol: snapshot.activePair ?? null, lastSymbol: snapshot.activePair ?? b.lanes.USDT.lastSymbol },
+                        USDC: { ...b.lanes.USDC, symbol: snapshot.activePairUSDC ?? null, lastSymbol: snapshot.activePairUSDC ?? b.lanes.USDC.lastSymbol },
                       }
                     : b.lanes;
                   return {
@@ -436,7 +457,7 @@ export const useDesk = create<DeskState>()(
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<DeskState>;
         if (!saved.bots?.length) return { ...current, ...saved };
-        const bots = saved.bots.map((b) => ({
+        const bots = saved.bots.filter((b) => b.source === "bridge" || b.name === "ABinanceTradingBot (local)").map((b) => ({
           ...b,
           typing: false,
           source: b.source ?? (b.name === "ABinanceTradingBot (local)" ? "bridge" : "engine"),
