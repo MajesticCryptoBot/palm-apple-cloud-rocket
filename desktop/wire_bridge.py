@@ -238,7 +238,7 @@ def install_patches() -> None:
         orig_send = Bot.send_message
 
         async def send_message(self, *args, **kwargs):
-            text = kwargs.get("text", args[0] if args else "")
+            text = kwargs.get("text", args[1] if len(args) > 1 else "")
             BRIDGE.publish("" if text is None else str(text))
             return await orig_send(self, *args, **kwargs)
 
