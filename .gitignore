@@ -3,3 +3,8 @@ node_modules/
 .github_repo
 .env
 .env.*
+
+# Local WIRE desktop build outputs
+.output/
+dist/
+release/
