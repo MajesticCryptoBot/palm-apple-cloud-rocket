@@ -3,7 +3,6 @@ import { persist } from "zustand/middleware";
 import {
   applyUserText,
   createBot,
-  makeLocalBot,
   pushReplies,
   seedBots,
   tickBot,
@@ -189,7 +188,7 @@ export const useDesk = create<DeskState>()(
   persist(
     (set, get) => ({
       bots: seeded,
-      activeId: seeded[0]?.id ?? "",
+      activeId: "",
       sound: true,
       infoOpen: false,
       query: "",
@@ -362,7 +361,7 @@ export const useDesk = create<DeskState>()(
                   /* reply still stands */
                 }
               } catch {
-                replies = ["REAL SCRIPT NOT CONNECTED. Use Details → Connect script. This chat did not simulate the command."];
+                replies = ["REAL SCRIPT NOT CONNECTED. Open this bot’s details and choose Connect / start script. This chat did not simulate the command."];
                 blocked = true;
               } finally {
                 clearTimeout(timer);
@@ -457,14 +456,13 @@ export const useDesk = create<DeskState>()(
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<DeskState>;
         if (!saved.bots?.length) return { ...current, ...saved };
-        const bots = saved.bots.filter((b) => b.source === "bridge" || b.name === "ABinanceTradingBot (local)").map((b) => ({
+        const bots = saved.bots.filter((b) => b.source === "bridge" && b.name !== "ABinanceTradingBot (local)").map((b) => ({
           ...b,
           typing: false,
-          source: b.source ?? (b.name === "ABinanceTradingBot (local)" ? "bridge" : "engine"),
+          source: "bridge",
           inbox: b.inbox ?? [],
         }));
-        if (!bots.some(isBridge)) bots.unshift(makeLocalBot());
-        const activeId = saved.activeId && bots.some((b) => b.id === saved.activeId) ? saved.activeId : bots[0].id;
+        const activeId = saved.activeId && bots.some((b) => b.id === saved.activeId) ? saved.activeId : (bots[0]?.id ?? "");
         return { ...current, ...saved, bots, activeId, query: "" };
       },
       partialize: (s) => ({
