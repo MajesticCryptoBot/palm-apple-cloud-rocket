@@ -4,7 +4,6 @@ import {
   applyUserText,
   createBot,
   pushReplies,
-  seedBots,
   tickBot,
   uid,
   type Bot,
@@ -28,8 +27,6 @@ type DeskState = {
   toggleInfo: () => void;
   send: (text: string) => void;
   toggleOnline: (id: string) => void;
-  addBot: (config: { name: string; exchange: Exchange; scriptPath: string; pythonPath?: string; bridgePort: number; commands: CommandSpec[] }) => void;
-  configureBot: (id: string, config: { scriptPath?: string; pythonPath?: string; bridgePort?: number }) => void;
   updateCommands: (id: string, commands: CommandSpec[]) => void;
   removeBot: (id: string) => void;
   tickAll: () => void;
