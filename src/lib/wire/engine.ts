@@ -1516,8 +1516,9 @@ export function makeLocalBot(now = Date.now()): Bot {
   return bot;
 }
 
-export function seedBots(now = Date.now()): Bot[] {
-  return [makeLocalBot(now)];
+export function seedBots(_now = Date.now()): Bot[] {
+  // A fresh install starts empty. Never bundle or auto-register a user script.
+  return [];
 }
 
 export function previewLine(bot: Bot): string {
