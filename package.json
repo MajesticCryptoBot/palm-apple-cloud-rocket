@@ -132,7 +132,7 @@
       "createStartMenuShortcut": true
     }
   },
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Private local desktop chat for controlling an already-running Python bot through its file bridge",
   "author": "MajesticCryptoBot"
 }
