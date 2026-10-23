@@ -94,7 +94,7 @@ declare global {
 }
 
 export function isBridge(bot: Bot): boolean {
-  return bot.source === "bridge" || bot.name === "ABinanceTradingBot (local)";
+  return bot.source === "bridge";
 }
 
 function toneFor(text: string): { tone: Tone; mono: boolean } {
