@@ -150,10 +150,12 @@ class Bridge:
                 return
 
             def _cors(self) -> None:
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Private-Network", "true")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                origin = self.headers.get("Origin")
+                if origin == "http://127.0.0.1:47831":
+                    self.send_header("Access-Control-Allow-Origin", origin)
+                    self.send_header("Access-Control-Allow-Private-Network", "true")
+                    self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                    self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
             def _json(self, code: int, payload: dict) -> None:
                 raw = json.dumps(payload).encode("utf-8")
@@ -193,6 +195,10 @@ class Bridge:
                 self._json(404, {"ok": False, "error": "Not found"})
 
             def do_POST(self) -> None:
+                origin = self.headers.get("Origin")
+                if origin and origin != "http://127.0.0.1:47831":
+                    self._json(403, {"ok": False, "blocked": True, "replies": ["Request origin is not allowed."]})
+                    return
                 path = self.path.split("?", 1)[0]
                 if path != "/command":
                     self._json(404, {"ok": False, "error": "Not found"})
