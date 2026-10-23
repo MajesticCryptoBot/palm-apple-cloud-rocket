@@ -29,6 +29,7 @@ type DeskState = {
   toggleOnline: (id: string) => void;
   updateCommands: (id: string, commands: CommandSpec[]) => void;
   removeBot: (id: string) => void;
+  addBot: (profile: BotProfile) => void;
   tickAll: () => void;
   drain: (id: string) => Promise<void>;
 };
@@ -73,6 +74,15 @@ function soundFor(replies: Reply[], active: boolean, sound: boolean) {
 
 type ScriptSnapshot = { symbol?: string | null; symbol2?: string | null; main_usdt?: number; main_usdc?: number; rescue_usdt?: number; rescue_usdc?: number; isaac_allocated?: number; ts?: string };
 
+export const BOT_PROFILES = [
+  { name: "ABinanceTradingBot", exchange: "Binance Testnet" as Exchange, directory: "ABINANCE TESTNET" },
+  { name: "Binance Live Bot", exchange: "Binance" as Exchange, directory: "BINANCE LIVE" },
+  { name: "Bitget Live Bot", exchange: "Bitget" as Exchange, directory: "Bitget Live Bot" },
+  { name: "Bybit Live Bot", exchange: "Bybit" as Exchange, directory: "Bybit Live Bot" },
+  { name: "GROK TESTNET", exchange: "Binance Testnet" as Exchange, directory: "GROK TESTNET" },
+  { name: "ZZZBinance METRICS LIVE", exchange: "Binance" as Exchange, directory: "ZZZBinance METRICS LIVE" },
+] as const;
+export type BotProfile = (typeof BOT_PROFILES)[number];
 export const BRIDGE_DIRECTORY = ["C:", "Users", "pauld", "Desktop", "ABINANCE TESTNET"].join("\\");
 
 declare global {
@@ -80,8 +90,8 @@ declare global {
     wire?: {
       selectWallpaper: () => Promise<string | null>;
       showNotification: (payload: { title: string; body: string; silent?: boolean }) => Promise<{ ok: boolean }>;
-      bridgePoll: () => Promise<{ connected: boolean; error?: string; snapshot: ScriptSnapshot | null; items: { id: string; text: string; ts?: number }[]; bridgeDirectory: string }>;
-      bridgeCommand: (command: string) => Promise<{ ok: boolean; error?: string; text?: string; ts?: string }>;
+      bridgePoll: (directory?: string) => Promise<{ connected: boolean; error?: string; snapshot: ScriptSnapshot | null; items: { id: string; text: string; ts?: number }[]; bridgeDirectory: string }>;
+      bridgeCommand: (command: string, directory?: string) => Promise<{ ok: boolean; error?: string; text?: string; ts?: string }>;
     };
   }
 }
@@ -97,61 +107,53 @@ function toneFor(text: string): { tone: Tone; mono: boolean } {
   return { tone: alert ? "alert" : trade ? "trade" : "normal", mono: text.includes("\n") || text.startsWith("Spot Wallet") };
 }
 
-const bridgeUpByPort = new Map<number, boolean>();
 let polling = false;
 
 async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => void, get: () => DeskState) {
-  if (polling) return;
+  if (polling || !window.wire?.bridgePoll) return;
   const targets = get().bots.filter(isBridge);
-  if (!targets.length || !window.wire?.bridgePoll) return;
+  if (!targets.length) return;
   polling = true;
   try {
-    const polled = await window.wire.bridgePoll().catch(() => null);
-    if (!polled) return;
-    const now = Date.now();
-    const activeId = get().activeId;
-    const sound = get().sound;
-    const extra: Message[] = [];
-    const allReplies: Reply[] = [];
-    const previous = bridgeUpByPort.get(47832);
-    bridgeUpByPort.set(47832, polled.connected);
-    if (previous !== undefined && previous !== polled.connected) {
-      extra.push({ id: uid("m"), from: "service", text: polled.connected
-        ? "Connected to the already-running bot through its ASP file bridge."
-        : (polled.error || "The local bot bridge is not responding. Start the bot manually in CMD and check that its bridge task is active."),
-        ts: now, tone: "service" });
-    }
-    for (const item of polled.items ?? []) {
-      const text = String(item.text || "");
-      if (!text) continue;
-      const look = toneFor(text);
-      extra.push({ id: uid("m"), from: "bot", text, ts: typeof item.ts === "number" && Number.isFinite(item.ts) ? item.ts : now, tone: look.tone, mono: look.mono });
-      allReplies.push({ text, tone: look.tone, mono: look.mono });
-    }
-    if (!polled.connected && previous === undefined && polled.error) {
-      extra.push({ id: uid("m"), from: "service", text: "Waiting for your already-running bot. Start ABinanceTradingBot.py yourself in Windows CMD. WIRE will never launch it. " + polled.error, ts: now, tone: "service" });
-    }
-    const snapshot = polled.snapshot;
-    set((state) => ({
-      bots: state.bots.map((bot) => {
-        if (!isBridge(bot)) return bot;
-        const liveState = snapshot ? {
-          lanes: {
-            USDT: { ...bot.lanes.USDT, symbol: snapshot.symbol ?? null, lastSymbol: snapshot.symbol ?? bot.lanes.USDT.lastSymbol, allocated: Number(snapshot.main_usdt ?? bot.lanes.USDT.allocated), rescuePool: Number(snapshot.rescue_usdt ?? bot.lanes.USDT.rescuePool) },
-            USDC: { ...bot.lanes.USDC, symbol: snapshot.symbol2 ?? null, lastSymbol: snapshot.symbol2 ?? bot.lanes.USDC.lastSymbol, allocated: Number(snapshot.main_usdc ?? bot.lanes.USDC.allocated), rescuePool: Number(snapshot.rescue_usdc ?? bot.lanes.USDC.rescuePool) },
-          },
-          isaac: { ...bot.isaac, allocated: Number(snapshot.isaac_allocated ?? bot.isaac.allocated) },
-        } : {};
-        if (!extra.length) return { ...bot, ...liveState, online: polled.connected, lastSeen: polled.connected ? now : bot.lastSeen };
-        const active = bot.id === activeId;
-        return { ...bot, ...liveState, online: polled.connected, lastSeen: polled.connected ? now : bot.lastSeen, messages: [...bot.messages, ...extra].slice(-500), unread: active ? 0 : bot.unread + extra.filter((m) => m.from === "bot").length };
-      }),
-    }));
-    soundFor(allReplies, targets.some((bot) => bot.id === activeId), sound);
-    const notificationStyle = (() => { try { return localStorage.getItem("wire-notification-style") || "system-and-chat"; } catch { return "system-and-chat"; } })();
-    if (notificationStyle === "system-and-chat" || notificationStyle === "system-only") {
-      for (const reply of allReplies.slice(-3)) {
-        void window.wire?.showNotification({ title: "WIRE · Trading notification", body: reply.text.replace(/\\s+/g, " ").slice(0, 240), silent: notificationStyle === "system-only" });
+    for (const target of targets) {
+      const polled = await window.wire.bridgePoll(target.bridgeDirectory).catch(() => null);
+      if (!polled) continue;
+      const now = Date.now();
+      const active = get().activeId === target.id;
+      const snapshot = polled.snapshot;
+      const extra: Message[] = [];
+      const replies: Reply[] = [];
+      for (const item of polled.items ?? []) {
+        const text = String(item.text || "");
+        if (!text) continue;
+        const look = toneFor(text);
+        extra.push({ id: uid("m"), from: "bot", text, ts: typeof item.ts === "number" && Number.isFinite(item.ts) ? item.ts : now, tone: look.tone, mono: look.mono });
+        replies.push({ text, tone: look.tone, mono: look.mono });
+      }
+      set((state) => ({
+        bots: state.bots.map((bot) => {
+          if (bot.id !== target.id) return bot;
+          const liveState = snapshot ? {
+            lanes: {
+              USDT: { ...bot.lanes.USDT, symbol: snapshot.symbol ?? null, lastSymbol: snapshot.symbol ?? bot.lanes.USDT.lastSymbol, allocated: Number(snapshot.main_usdt ?? bot.lanes.USDT.allocated), rescuePool: Number(snapshot.rescue_usdt ?? bot.lanes.USDT.rescuePool) },
+              USDC: { ...bot.lanes.USDC, symbol: snapshot.symbol2 ?? null, lastSymbol: snapshot.symbol2 ?? bot.lanes.USDC.lastSymbol, allocated: Number(snapshot.main_usdc ?? bot.lanes.USDC.allocated), rescuePool: Number(snapshot.rescue_usdc ?? bot.lanes.USDC.rescuePool) },
+            },
+            isaac: { ...bot.isaac, allocated: Number(snapshot.isaac_allocated ?? bot.isaac.allocated) },
+          } : {};
+          return {
+            ...bot, ...liveState, online: polled.connected,
+            lastSeen: polled.connected ? now : bot.lastSeen,
+            messages: extra.length ? [...bot.messages.filter((m) => m.from !== "service"), ...extra].slice(-500) : bot.messages.filter((m) => m.from !== "service"),
+            unread: active ? 0 : bot.unread + extra.length,
+          };
+        }),
+      }));
+      soundFor(replies, active, get().sound);
+      const notificationStyle = (() => { try { return localStorage.getItem("wire-notification-style") || "system-and-chat"; } catch { return "system-and-chat"; } })();
+      if (notificationStyle === "system-and-chat" || notificationStyle === "system-only") {
+        for (const reply of replies.slice(-3)) {
+          void window.wire?.showNotification({ title: target.name, body: reply.text.replace(/\s+/g, " ").slice(0, 240), silent: notificationStyle === "system-only" });
+        }
       }
     }
   } finally { polling = false; }
@@ -164,7 +166,7 @@ const seeded = (() => {
   bot.prices = {};
   bot.anchors = {};
   bot.series = {};
-  bot.messages = [{ id: uid("m"), from: "service", text: "WIRE is waiting for your bot. Start ABinanceTradingBot.py yourself in Windows CMD. WIRE connects through the bridge files and never launches or edits your script.", ts: Date.now(), tone: "service" }];
+  bot.messages = [];
   bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
   bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
   bot.isaac.symbol = "";
@@ -199,10 +201,22 @@ export const useDesk = create<DeskState>()(
       toggleOnline: (id) => {
         const bot = get().bots.find((b) => b.id === id);
         if (!bot || !isBridge(bot)) return;
-        bridgeUpByPort.delete(47832);
         void pollBridge(set, get);
       },
       updateCommands: (id, commands) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, commands } : b) })),
+      addBot: (profile) => set((s) => {
+        const existing = s.bots.find((b) => b.bridgeDirectory === profile.directory);
+        if (existing) return { activeId: existing.id, infoOpen: false };
+        const bot = createBot({ name: profile.name, exchange: profile.exchange, online: false, source: "bridge", commands: [...COMMANDS] });
+        bot.bridgeDirectory = profile.directory;
+        bot.wallet = {}; bot.history = []; bot.prices = {}; bot.anchors = {}; bot.series = {};
+        bot.messages = []; bot.inbox = []; bot.typing = false; bot.unread = 0;
+        bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+        bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+        bot.isaac.symbol = ""; bot.isaac.orders = []; bot.isaac.virtualUsdt = 0; bot.isaac.allocated = 0; bot.isaac.initial = 0;
+        bot.isaac.trailingStop = null; bot.isaac.trailingDistance = null; bot.isaac.dipActive = false; bot.isaac.dipLevel = null; bot.isaac.dipDistance = null;
+        return { bots: [...s.bots, bot], activeId: bot.id, infoOpen: false };
+      }),
       removeBot: (id) =>
         set((s) => {
           const bots = s.bots.filter((b) => b.id !== id);
@@ -223,18 +237,7 @@ export const useDesk = create<DeskState>()(
           ts: Date.now(),
           pending: !bot.online,
         };
-        const notice: Message[] =
-          !bot.online && !bot.messages.some((m) => m.pending)
-            ? [
-                {
-                  id: uid("m"),
-                  from: "service",
-                  text: "Bot is offline. This message will send when it is back.",
-                  ts: Date.now(),
-                  tone: "service",
-                },
-              ]
-            : [];
+        const notice: Message[] = [];
         set((s) => ({
           bots: s.bots.map((b) =>
             b.id === id
@@ -285,19 +288,19 @@ export const useDesk = create<DeskState>()(
               let connected = false;
               let snapshot: ScriptSnapshot | null = null;
               try {
-                const result = await window.wire?.bridgeCommand(job.text);
+                const result = await window.wire?.bridgeCommand(job.text, bot.bridgeDirectory);
                 connected = Boolean(result?.ok);
                 blocked = !connected;
                 replies = connected
                   ? [String(result?.text || "The running bot returned no message.")]
                   : [String(result?.error || "The local bot bridge is unavailable. Start the bot manually in CMD.")];
-                const poll = await window.wire?.bridgePoll();
+                const poll = await window.wire?.bridgePoll(bot.bridgeDirectory);
                 if (poll) {
                   snapshot = poll.snapshot;
                   connected = poll.connected && connected;
                 }
               } catch {
-                replies = ["REAL BOT NOT CONNECTED. Start your script manually in Windows CMD and ensure its ASP file-bridge task is running. WIRE did not simulate this command."];
+                replies = ["Bot is not responding. Check that its process and bridge are running."];
                 blocked = true;
               }
               const now = Date.now();
@@ -390,34 +393,21 @@ export const useDesk = create<DeskState>()(
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<DeskState>;
         if (!saved.bots?.length) return { ...current, ...saved, bots: seeded, activeId: seeded[0].id, query: "" };
-        const savedBots = (saved.bots ?? []).filter((b) => b.source === "bridge").map((b) => ({
-          ...b,
-          name: "ABinanceTradingBot",
-          exchange: "Binance Testnet" as Exchange,
-          scriptPath: undefined,
-          pythonPath: undefined,
-          bridgePort: undefined,
-          typing: false,
-          online: false,
-          unread: 0,
-          lastSeen: Date.now(),
-          source: "bridge" as const,
-          messages: [{ id: uid("m"), from: "service" as const, text: "WIRE 1.0.4 is connected to the real local bot bridge. Start ABinanceTradingBot.py yourself in Windows CMD; no script is launched by WIRE.", ts: Date.now(), tone: "service" as const }],
-          inbox: [],
-          conversation: null,
+        const savedBots = saved.bots.filter((b) => b.source === "bridge").map((b) => ({
+          ...b, scriptPath: undefined, pythonPath: undefined, bridgePort: undefined,
+          typing: false, online: false, unread: 0, source: "bridge" as const,
+          bridgeDirectory: b.bridgeDirectory || (b.name === "ABinanceTradingBot" ? "ABINANCE TESTNET" : undefined),
+          messages: (b.messages ?? []).filter((m) => m.from !== "service").slice(-500),
+          inbox: [], conversation: null,
           commands: b.commands?.length ? b.commands : [...COMMANDS],
-          wallet: {},
-          history: [],
-          prices: {},
-          anchors: {},
-          series: {},
+          wallet: {}, history: [], prices: {}, anchors: {}, series: {},
           lanes: {
             USDT: { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null },
             USDC: { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null },
           },
           isaac: { ...b.isaac, symbol: "", orders: [], virtualUsdt: 0, allocated: 0, initial: 0, trailingStop: null, trailingDistance: null, dipActive: false, dipLevel: null, dipDistance: null },
         }));
-        const bots = savedBots.length ? [savedBots[0]] : seeded;
+        const bots = savedBots.length ? savedBots : seeded;
         const activeId = saved.activeId && bots.some((b) => b.id === saved.activeId) ? saved.activeId : bots[0].id;
         return { ...current, ...saved, bots, activeId, query: "" };
       },
