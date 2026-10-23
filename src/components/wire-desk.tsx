@@ -19,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type CommandSpec, type Message } from "@/lib/wire/engine";
-import { BOT_PROFILES, useDesk } from "@/lib/wire/store";
+import { useDesk } from "@/lib/wire/store";
 import { AddBotDialog } from "@/components/wire-add-bot";
 import { WireSettings } from "@/components/wire-settings";
 
