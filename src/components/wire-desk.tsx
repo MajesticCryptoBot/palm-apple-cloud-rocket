@@ -247,7 +247,7 @@ export function Desk() {
       )}
 
       {adding && <BotFatherDialog onClose={() => setAdding(false)} />}
-      {settingsOpen && <WireSettings botId={active?.id ?? ""} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <WireSettings botId={botfatherOpen ? "" : active?.id ?? ""} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
@@ -479,10 +479,12 @@ function Thread({
         <button
           type="button"
           onClick={onToggleInfo}
-          className="grid size-10 place-items-center rounded-full text-muted hover:bg-elevated"
-          aria-label="Bot details"
+          className="flex h-10 items-center gap-2 rounded-full px-3 text-sm font-medium text-muted hover:bg-elevated hover:text-fg"
+          aria-label="Bot details and script start controls"
+          title="Open Details to connect or start this Python script"
         >
           <PanelRight className="size-5" />
+          <span className="hidden lg:inline">Details / Start</span>
         </button>
       </header>
 
