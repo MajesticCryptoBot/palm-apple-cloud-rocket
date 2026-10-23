@@ -149,7 +149,7 @@ class Bridge:
         finally:
             with self._lock:
                 self._cmd_replies = None
-        return caught or ["No command handler reply was captured. Check that this command is registered and that its user/owner filter accepts WIRE's command identity."]
+        return caught or [f"No command handler reply was captured for WIRE user ID {self.user_id}. Check that this command is registered and that its user/owner filter accepts this ID."]
 
     def _update(self, text: str):
         from datetime import datetime, timezone
