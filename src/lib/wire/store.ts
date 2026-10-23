@@ -381,7 +381,7 @@ export const useDesk = create<DeskState>()(
       name: "wire-desk-v1",
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<DeskState>;
-        if (!saved.bots?.length) return { ...current, ...saved };
+        if (!saved.bots?.length) return { ...current, ...saved, bots: seeded, activeId: seeded[0].id, query: "" };
         const savedBots = (saved.bots ?? []).filter((b) => b.source === "bridge").map((b) => ({
           ...b,
           name: "ABinanceTradingBot",
