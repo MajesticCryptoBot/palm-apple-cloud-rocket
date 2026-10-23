@@ -12,6 +12,14 @@ function Home() {
     if (api.hasHydrated()) setReady(true);
     return api.onFinishHydration(() => setReady(true));
   }, []);
+  useEffect(() => {
+    if (!ready || !window.wire?.getDefaultScript) return;
+    void window.wire.getDefaultScript().then((scriptPath) => {
+      if (!scriptPath) return;
+      const local = useDesk.getState().bots.find((bot) => bot.name === "ABinanceTradingBot (local)");
+      if (local && !local.scriptPath) useDesk.getState().configureBot(local.id, { scriptPath });
+    }).catch(() => undefined);
+  }, [ready]);
   if (!ready) return <div className="h-dvh bg-bg" />;
   return <Desk />;
 }
