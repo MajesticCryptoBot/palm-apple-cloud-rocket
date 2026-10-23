@@ -466,7 +466,7 @@ export const useDesk = create<DeskState>()(
         const bots = saved.bots.filter((b) => b.source === "bridge" && b.name !== "ABinanceTradingBot (local)").map((b) => ({
           ...b,
           typing: false,
-          source: "bridge",
+          source: "bridge" as const,
           inbox: b.inbox ?? [],
         }));
         const activeId = saved.activeId && bots.some((b) => b.id === saved.activeId) ? saved.activeId : (bots[0]?.id ?? "");
