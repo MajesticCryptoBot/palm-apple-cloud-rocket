@@ -3,7 +3,7 @@
 Run the bot through this process so every command and every automatic
 message (patterns, fills, trailing stops, rescues, Isaac) hits the desk:
 
-    py -3 wire_bridge.py --run C:\\path\\to\\ABinanceTradingBot.py
+    py -3 wire_bridge.py --run C:\\path\\to\\my_bot.py
 
 Or double-click Wire.bat and pass the script path.
 The desk is http://127.0.0.1:47832/ and the same port serves /command /live /health.
@@ -97,7 +97,7 @@ class Bridge:
 
     async def deliver(self, text: str) -> list[str]:
         if self.app is None or self.loop is None:
-            return ["The trading script is not attached. Start it with: py -3 wire_bridge.py --run ABinanceTradingBot.py"]
+            return ["The trading script is not attached. Start it with: py -3 wire_bridge.py --run my_bot.py"]
         caught: list[str] = []
         with self._lock:
             self._cmd_replies = caught
@@ -333,7 +333,7 @@ def main() -> None:
     if "--run" in args:
         index = args.index("--run")
         if index + 1 >= len(args):
-            raise SystemExit("Usage: wire_bridge.py --run path\\to\\ABinanceTradingBot.py")
+            raise SystemExit("Usage: wire_bridge.py --run path\\to\\my_bot.py")
         try:
             run_script(args[index + 1])
         except Exception:
@@ -342,7 +342,7 @@ def main() -> None:
         return
     BRIDGE.start()
     print(f"Wire listening on http://{HOST}:{PORT}/")
-    print("Start the bot with: py -3 wire_bridge.py --run ABinanceTradingBot.py")
+    print("Start the bot with: py -3 wire_bridge.py --run my_bot.py")
     if not NO_BROWSER and ("--desktop" in args or not args):
         launch_browser()
     try:
