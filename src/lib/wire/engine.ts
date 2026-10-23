@@ -162,6 +162,7 @@ export type Bot = {
   source: "engine" | "bridge";
   bridgePort?: number;
   scriptPath?: string;
+  pythonPath?: string;
   commands?: CommandSpec[];
 };
 
@@ -1428,6 +1429,7 @@ export function createBot(input: {
   source?: "engine" | "bridge";
   bridgePort?: number;
   scriptPath?: string;
+  pythonPath?: string;
   commands?: CommandSpec[];
 }): Bot {
   const now = input.now ?? Date.now();
@@ -1469,6 +1471,7 @@ export function createBot(input: {
     source: input.source ?? "engine",
     bridgePort: input.bridgePort,
     scriptPath: input.scriptPath,
+    pythonPath: input.pythonPath,
     commands: input.commands ?? [...COMMANDS],
   };
   for (const base of BASES) ensureBase(bot, base);
