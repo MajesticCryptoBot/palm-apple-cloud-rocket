@@ -107,75 +107,51 @@ let polling = false;
 async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => void, get: () => DeskState) {
   if (polling) return;
   const targets = get().bots.filter(isBridge);
-  if (!targets.length) return;
+  if (!targets.length || !window.wire?.bridgePoll) return;
   polling = true;
   try {
-    const results = await Promise.all(targets.map(async (bot) => {
-      const port = bot.bridgePort ?? 47832;
-      let reachable = false;
-      let connected = false;
-      let items: { text: string; ts?: number }[] = [];
-      let snapshot: ScriptSnapshot | null = null;
-      try {
-        const health = await fetch(`http://127.0.0.1:${port}/health`, { cache: "no-store" });
-        if (health.ok) {
-          reachable = true;
-          connected = Boolean(((await health.json()) as { connected?: boolean }).connected);
-          const after = liveSeqByPort.get(port) ?? 0;
-          const live = await fetch(`http://127.0.0.1:${port}/live?after=${after}`, { cache: "no-store" });
-          if (live.ok) {
-            const data = (await live.json()) as { latest?: number; items?: { text: string; ts?: number }[] };
-            if (typeof data.latest === "number") liveSeqByPort.set(port, data.latest);
-            items = Array.isArray(data.items) ? data.items : [];
-          }
-          if (connected) {
-            try {
-              const snap = await fetch(`http://127.0.0.1:${port}/snapshot`, { cache: "no-store" });
-              if (snap.ok) snapshot = (await snap.json()) as ScriptSnapshot;
-            } catch { /* live notifications still work */ }
-          }
-        }
-      } catch { reachable = false; }
-      const previous = bridgeUpByPort.get(port);
-      bridgeUpByPort.set(port, connected);
-      return { id: bot.id, port, reachable, connected, changed: previous !== undefined && previous !== connected, items, snapshot };
-    }));
+    const polled = await window.wire.bridgePoll().catch(() => null);
+    if (!polled) return;
     const now = Date.now();
     const activeId = get().activeId;
     const sound = get().sound;
+    const extra: Message[] = [];
     const allReplies: Reply[] = [];
-    const byId = new Map(results.map((r) => [r.id, r]));
-    set((s) => ({
-      bots: s.bots.map((bot) => {
+    const previous = bridgeUpByPort.get(47832);
+    bridgeUpByPort.set(47832, polled.connected);
+    if (previous !== undefined && previous !== polled.connected) {
+      extra.push({ id: uid("m"), from: "service", text: polled.connected
+        ? "Connected to the already-running bot through its ASP file bridge."
+        : (polled.error || "The local bot bridge is not responding. Start the bot manually in CMD and check that its bridge task is active."),
+        ts: now, tone: "service" });
+    }
+    for (const item of polled.items ?? []) {
+      const text = String(item.text || "");
+      if (!text) continue;
+      const look = toneFor(text);
+      extra.push({ id: uid("m"), from: "bot", text, ts: typeof item.ts === "number" && Number.isFinite(item.ts) ? item.ts : now, tone: look.tone, mono: look.mono });
+      allReplies.push({ text, tone: look.tone, mono: look.mono });
+    }
+    if (!polled.connected && previous === undefined && polled.error) {
+      extra.push({ id: uid("m"), from: "service", text: "Waiting for your already-running bot. Start ABinanceTradingBot.py yourself in Windows CMD. WIRE will never launch it. " + polled.error, ts: now, tone: "service" });
+    }
+    const snapshot = polled.snapshot;
+    set((state) => ({
+      bots: state.bots.map((bot) => {
         if (!isBridge(bot)) return bot;
-        const result = byId.get(bot.id);
-        if (!result) return bot;
-        const extra: Message[] = [];
-        if (result.changed) {
-          extra.push({ id: uid("m"), from: "service", text: result.connected
-            ? "Live script connected. Commands now go to this local script."
-            : result.reachable ? "WIRE bridge is running, but this script is not attached." : "Local script bridge disconnected.", ts: now, tone: "service" });
-        }
-        for (const item of result.items) {
-          const text = String(item.text || "");
-          if (!text) continue;
-          const look = toneFor(text);
-          extra.push({ id: uid("m"), from: "bot", text, ts: item.ts ? Math.round(Number(item.ts) * 1000) : now, tone: look.tone, mono: look.mono });
-          allReplies.push({ text, tone: look.tone, mono: look.mono });
-        }
-        const liveState = result.snapshot ? {
+        const liveState = snapshot ? {
           lanes: {
-            USDT: { ...bot.lanes.USDT, symbol: result.snapshot.activePair ?? null, lastSymbol: result.snapshot.activePair ?? bot.lanes.USDT.lastSymbol },
-            USDC: { ...bot.lanes.USDC, symbol: result.snapshot.activePairUSDC ?? null, lastSymbol: result.snapshot.activePairUSDC ?? bot.lanes.USDC.lastSymbol },
+            USDT: { ...bot.lanes.USDT, symbol: snapshot.symbol ?? null, lastSymbol: snapshot.symbol ?? bot.lanes.USDT.lastSymbol, allocated: Number(snapshot.main_usdt ?? bot.lanes.USDT.allocated), rescuePool: Number(snapshot.rescue_usdt ?? bot.lanes.USDT.rescuePool) },
+            USDC: { ...bot.lanes.USDC, symbol: snapshot.symbol2 ?? null, lastSymbol: snapshot.symbol2 ?? bot.lanes.USDC.lastSymbol, allocated: Number(snapshot.main_usdc ?? bot.lanes.USDC.allocated), rescuePool: Number(snapshot.rescue_usdc ?? bot.lanes.USDC.rescuePool) },
           },
-          isaac: { ...bot.isaac, symbol: result.snapshot.isaacPair ?? "" },
+          isaac: { ...bot.isaac, symbol: snapshot.symbol ?? bot.isaac.symbol, allocated: Number(snapshot.isaac_allocated ?? bot.isaac.allocated) },
         } : {};
-        if (!extra.length) return { ...bot, ...liveState, online: result.connected, lastSeen: result.connected ? now : bot.lastSeen };
+        if (!extra.length) return { ...bot, ...liveState, online: polled.connected, lastSeen: polled.connected ? now : bot.lastSeen };
         const active = bot.id === activeId;
-        return { ...bot, ...liveState, online: result.connected, lastSeen: now, messages: [...bot.messages, ...extra].slice(-500), unread: active ? 0 : bot.unread + extra.filter((m) => m.from === "bot").length };
+        return { ...bot, ...liveState, online: polled.connected, lastSeen: polled.connected ? now : bot.lastSeen, messages: [...bot.messages, ...extra].slice(-500), unread: active ? 0 : bot.unread + extra.filter((m) => m.from === "bot").length };
       }),
     }));
-    soundFor(allReplies, targets.some((b) => b.id === activeId), sound);
+    soundFor(allReplies, targets.some((bot) => bot.id === activeId), sound);
     const notificationStyle = (() => { try { return localStorage.getItem("wire-notification-style") || "system-and-chat"; } catch { return "system-and-chat"; } })();
     if (notificationStyle === "system-and-chat" || notificationStyle === "system-only") {
       for (const reply of allReplies.slice(-3)) {
