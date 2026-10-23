@@ -808,7 +808,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
         <button
           type="button"
           onClick={() => { if (bot.source === "bridge") void connectScript(); else toggleOnline(bot.id); }}
-          className={\`w-full rounded-md px-3 py-2.5 text-sm font-medium \${bot.online ? "bg-elevated text-fg" : "bg-accent-strong text-fg"}\`}
+          className={\`w-full rounded-md px-3 py-2.5 text-sm font-medium ${bot.online ? "bg-elevated text-fg" : "bg-accent-strong text-fg"}\`}
         >
           {bot.source === "bridge" ? (bot.online ? "Stop WIRE-launched script" : bot.scriptPath ? "Connect / start script" : "Choose Python script") : bot.online ? "Stop bot" : "Bring online"}
         </button>
@@ -844,7 +844,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
         <section className="rounded-md bg-bg p-3 text-sm">
           <h3 className="font-medium">Isaac DCA</h3>
           <p className="mt-1 text-muted">{bot.isaac.symbol} · {bot.isaac.orders.length}/7 orders · {bot.isaac.paused ? "paused" : "running"}</p>
-          <p className="font-mono text-xs text-subtle tabular-nums">Pool \${bot.isaac.virtualUsdt.toFixed(0)} / {bot.isaac.allocated.toFixed(0)}</p>
+          <p className="font-mono text-xs text-subtle tabular-nums">Pool ${bot.isaac.virtualUsdt.toFixed(0)} / {bot.isaac.allocated.toFixed(0)}</p>
         </section>
         <p className="text-xs leading-relaxed text-subtle">The menu button next to the message box opens this bot’s command list. Type / to filter it. Alt+1 to Alt+9 switches bots. Tab completes a command, Enter sends it.</p>
         {!confirm ? (
