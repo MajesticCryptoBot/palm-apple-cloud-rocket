@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   ArrowDown,
-  Bot as BotIcon,
   CheckCheck,
   ChevronDown,
   ChevronLeft,
@@ -11,6 +10,7 @@ import {
   Menu,
   PanelRight,
   Plus,
+  RotateCw,
   Search,
   Settings,
   Send,
@@ -18,8 +18,9 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type CommandSpec, type Exchange, type Message } from "@/lib/wire/engine";
+import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type CommandSpec, type Message } from "@/lib/wire/engine";
 import { useDesk } from "@/lib/wire/store";
+import { AddBotDialog } from "@/components/wire-add-bot";
 import { WireSettings } from "@/components/wire-settings";
 
 function parseCommandLines(raw: string): CommandSpec[] {
@@ -109,178 +110,55 @@ export function Desk() {
   const setActive = useDesk((s) => s.setActive);
   const toggleSound = useDesk((s) => s.toggleSound);
   const toggleInfo = useDesk((s) => s.toggleInfo);
+  const addBot = useDesk((s) => s.addBot);
   const [listMode, setListMode] = useState(true);
-  const [adding, setAdding] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [botfatherOpen, setBotfatherOpen] = useState(false);
-
-  const active = bots.find((b) => b.id === activeId) ?? null;
+  const [addBotOpen, setAddBotOpen] = useState(false);
+  const active = bots.find((b) => b.id === activeId) ?? bots[0] ?? null;
 
   useEffect(() => {
-    const id = window.setInterval(() => useDesk.getState().tickAll(), 2500);
+    const id = window.setInterval(() => useDesk.getState().tickAll(), 1000);
     return () => window.clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!e.altKey || e.key < "1" || e.key > "9") return;
-      const bot = useDesk.getState().bots[Number(e.key) - 1];
-      if (!bot) return;
-      e.preventDefault();
-      setActive(bot.id);
-      setListMode(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [setActive]);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return bots;
-    return bots.filter((b) => {
-      const blob = `${b.name} ${b.exchange} ${previewLine(b)}`.toLowerCase();
-      return blob.includes(q);
-    });
+    return bots.filter((b) => (`${b.name} ${b.exchange} ${previewLine(b)}`).toLowerCase().includes(q));
   }, [bots, query]);
 
   return (
     <div className="flex h-dvh min-h-0 overflow-hidden bg-bg text-fg">
-      <aside
-        className={`${listMode ? "flex" : "hidden"} min-h-0 w-full shrink-0 flex-col border-r border-line bg-sidebar md:flex md:w-80`}
-      >
+      <aside className={`${listMode ? "flex" : "hidden"} min-h-0 w-full shrink-0 flex-col border-r border-line bg-sidebar md:flex md:w-80`}>
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">Wire</h1>
-            <p className="text-xs text-muted">Private desk</p>
-          </div>
+          <div><h1 className="text-lg font-semibold tracking-tight">WIRE</h1><p className="text-xs text-muted">Private messenger</p></div>
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => { setBotfatherOpen(true); setListMode(false); }}
-              className="grid size-10 place-items-center rounded-full bg-elevated text-accent hover:bg-bubble-out"
-              aria-label="Open BotFather to add a bot"
-              title="BotFather · Add/manage scripts"
-            >
-              <BotIcon className="size-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent"
-              aria-label="Settings"
-              title="Settings"
-            >
-              <Settings className="size-5" />
-            </button>
+            <button type="button" onClick={() => setAddBotOpen(true)} className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent" aria-label="Add bot" title="Add bot"><Plus className="size-5" /></button>
+            <button type="button" onClick={() => setSettingsOpen(true)} className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent" aria-label="Settings" title="Settings"><Settings className="size-5" /></button>
           </div>
         </div>
         <div className="px-3 pb-2">
           <label className="flex items-center gap-2 rounded-full bg-bg px-3 py-2 text-sm text-muted">
             <Search className="size-4 shrink-0" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search"
-              className="w-full bg-transparent text-fg outline-none placeholder:text-subtle"
-            />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search chat" className="w-full bg-transparent text-fg outline-none placeholder:text-subtle" />
           </label>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <button type="button" onClick={() => { setBotfatherOpen(true); setListMode(false); }} className={`flex w-full items-center gap-3 border-b border-line px-3 py-3 text-left ${botfatherOpen ? "bg-bubble-out" : "hover:bg-elevated"}`}>
-            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-accent-strong text-fg"><BotIcon className="size-6" /></span>
-            <span className="min-w-0 flex-1"><span className="block font-medium">BotFather</span><span className="block truncate text-sm text-muted">Create bots · manage commands</span></span>
-          </button>
-          {shown.length === 0 && <p className="px-4 py-6 text-sm text-muted">No bots match that search.</p>}
-          {shown.map((bot) => (
-            <ChatRow
-              key={bot.id}
-              bot={bot}
-              active={bot.id === activeId}
-              onPick={() => {
-                setActive(bot.id);
-                setBotfatherOpen(false);
-                setListMode(false);
-              }}
-            />
-          ))}
+          {shown.map((bot) => <ChatRow key={bot.id} bot={bot} active={bot.id === active?.id} onPick={() => { setActive(bot.id); setListMode(false); }} />)}
         </div>
       </aside>
-
       <section className={`${listMode ? "hidden" : "flex"} min-h-0 min-w-0 flex-1 flex-col md:flex`}>
-        {botfatherOpen ? (
-          <BotFatherChat bots={bots} onBack={() => setListMode(true)} onCreate={() => setAdding(true)} onOpenBot={(id) => { setActive(id); setBotfatherOpen(false); }} />
-        ) : active ? (
-          <Thread
-            bot={active}
-            sound={sound}
-            onBack={() => setListMode(true)}
-            onToggleSound={toggleSound}
-            onToggleInfo={toggleInfo}
-          />
-        ) : (
-          <div className="grid flex-1 place-items-center px-6 text-center">
-            <div>
-              <p className="text-lg font-medium">No bot selected</p>
-              <p className="mt-1 text-sm text-muted">Add one to start a private chat.</p>
-              <button
-                type="button"
-                onClick={() => setAdding(true)}
-                className="mt-4 rounded-full bg-accent-strong px-4 py-2 text-sm font-medium text-fg"
-              >
-                Add a bot
-              </button>
-            </div>
-          </div>
+        {active ? <Thread bot={active} sound={sound} onBack={() => setListMode(true)} onToggleSound={toggleSound} onToggleInfo={toggleInfo} /> : (
+          <div className="grid flex-1 place-items-center px-6 text-center"><div><p className="text-lg font-medium">Your chats</p><p className="mt-1 text-sm text-muted">Choose a bot from the sidebar.</p></div></div>
         )}
       </section>
-
-      {active && !botfatherOpen && infoOpen && (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-20 bg-bg/70 xl:hidden"
-            aria-label="Close details"
-            onClick={toggleInfo}
-          />
-          <InfoPanel bot={active} onClose={toggleInfo} />
-        </>
-      )}
-
-      {adding && <BotFatherDialog onClose={() => setAdding(false)} />}
-      {settingsOpen && <WireSettings botId={botfatherOpen ? "" : active?.id ?? ""} onClose={() => setSettingsOpen(false)} />}
+      {active && infoOpen && <>
+        <button type="button" className="fixed inset-0 z-20 bg-bg/70 xl:hidden" aria-label="Close details" onClick={toggleInfo} />
+        <InfoPanel bot={active} onClose={toggleInfo} />
+      </>}
+      {addBotOpen && <AddBotDialog existing={bots.map((b) => b.bridgeDirectory ?? "")} onPick={(profile) => { addBot(profile); setAddBotOpen(false); setListMode(false); }} onClose={() => setAddBotOpen(false)} />}
+      {settingsOpen && <WireSettings botId={active?.id ?? ""} onClose={() => setSettingsOpen(false)} />}
     </div>
-  );
-}
-
-function BotFatherChat({ bots, onBack, onCreate, onOpenBot }: { bots: Bot[]; onBack: () => void; onCreate: () => void; onOpenBot: (id: string) => void }) {
-  return (
-    <section className="flex min-h-0 flex-1 flex-col bg-bg">
-      <header className="flex shrink-0 items-center gap-3 border-b border-line bg-sidebar px-4 py-3">
-        <button type="button" onClick={onBack} className="grid size-9 place-items-center rounded-full text-muted hover:bg-elevated md:hidden" aria-label="Back to chats"><ChevronLeft className="size-5" /></button>
-        <span className="grid size-10 place-items-center rounded-full bg-accent-strong"><BotIcon className="size-5" /></span>
-        <div className="min-w-0 flex-1"><h2 className="font-semibold">BotFather</h2><p className="text-xs text-online">WIRE bot manager · local scripts only</p></div>
-      </header>
-      <div className="thread-bg min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          <div className="bubble bubble-in has-tail mr-auto max-w-[90%] rounded-xl bg-bubble-in px-4 py-3 text-sm shadow-sm">
-            <p className="font-semibold">Welcome to BotFather</p>
-            <p className="mt-2">I help you register and manage your own local Python scripts in WIRE. No trading bot is bundled with WIRE, and no script is started until you explicitly add it and choose Connect / start.</p>
-            <p className="mt-3 text-muted">Choose an action below. Your script remains on your PC.</p>
-          </div>
-          <div className="ml-auto max-w-[90%] rounded-xl rounded-br-sm bg-bubble-out px-4 py-3 text-sm">
-            <p className="font-medium">Available commands</p>
-            <p className="mt-2 font-mono">/newbot</p><p className="text-xs text-muted">Register a new Python script</p>
-            <p className="mt-3 font-mono">/mybots</p><p className="text-xs text-muted">View scripts already registered in WIRE</p>
-          </div>
-          <div className="bubble bubble-in has-tail mr-auto w-full max-w-[90%] rounded-xl bg-bubble-in px-4 py-4 text-sm">
-            <p className="font-semibold">Your registered bots ({bots.length})</p>
-            {bots.length ? <div className="mt-3 space-y-2">{bots.map((bot) => <button key={bot.id} onClick={() => onOpenBot(bot.id)} className="flex w-full items-center gap-3 rounded-lg bg-bg/70 p-3 text-left hover:bg-elevated"><span className={`size-2.5 rounded-full ${bot.online ? "bg-online" : "bg-subtle"}`} /><span className="min-w-0 flex-1"><span className="block truncate font-medium">{bot.name}</span><span className="block truncate text-xs text-muted">{bot.scriptPath || "No script selected"} · {bot.online ? "connected" : "not running"}</span></span><span className="text-xs text-accent">Open</span></button>)}</div> : <p className="mt-2 text-muted">No bots registered yet. Start with /newbot.</p>}
-            <button onClick={onCreate} className="mt-4 rounded-lg bg-accent-strong px-4 py-2.5 font-medium text-fg">/newbot · Create bot chat</button>
-          </div>
-        </div>
-      </div>
-      <div className="border-t border-line bg-sidebar px-4 py-3 text-xs text-muted">Commands sent here configure WIRE; trading commands are delivered to the selected Python script chat.</div>
-    </section>
   );
 }
 
@@ -437,7 +315,7 @@ function Thread({
             {bot.typing ? (
               <span>typing</span>
             ) : bot.source === "bridge" ? (
-              bot.online ? "live script" : "script offline"
+              bot.online ? "online" : "offline"
             ) : bot.online ? (
               "bot"
             ) : (
@@ -480,11 +358,11 @@ function Thread({
           type="button"
           onClick={onToggleInfo}
           className="flex h-10 items-center gap-2 rounded-full px-3 text-sm font-medium text-muted hover:bg-elevated hover:text-fg"
-          aria-label="Bot details and script start controls"
-          title="Open Details to connect or start this Python script"
+          aria-label="Bot details"
+          title="Bot details"
         >
           <PanelRight className="size-5" />
-          <span className="hidden lg:inline">Details / Start</span>
+          <span className="hidden lg:inline">Details</span>
         </button>
       </header>
 
@@ -556,6 +434,7 @@ function Thread({
                     </div>
                   )}
                   <Bubble
+                    onRepeat={m.from === "me" && m.text.trim().startsWith("/") ? () => useDesk.getState().send(m.text) : undefined}
                     message={m}
                     query={needle}
                     grouped={same(prev, m)}
@@ -601,12 +480,14 @@ function Thread({
 
 function Bubble({
   message,
+  onRepeat,
   query,
   grouped,
   tail,
   current,
 }: {
   message: Message;
+  onRepeat?: () => void;
   query: string;
   grouped: boolean;
   tail: boolean;
@@ -639,6 +520,11 @@ function Bubble({
           {hm(message.ts)}
           {mine && !message.pending && <CheckCheck className="size-3.5 text-accent" aria-label="Read" />}
         </span>
+        {onRepeat && (
+          <button type="button" onClick={onRepeat} className="absolute -top-2 right-10 rounded-full bg-sidebar px-2 py-1 text-xs text-accent opacity-0 shadow ring-1 ring-line group-hover:opacity-100" aria-label="Run this command again" title="Run this command again">
+            <RotateCw className="size-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -714,6 +600,16 @@ function Composer({ bot }: { bot: Bot }) {
     setMenuForced(false);
   }
 
+  function chooseCommand(name: string) {
+    if (["/pair", "/pair2", "/mb", "/mb2", "/buy_price", "/buy_price2"].includes(name)) {
+      setDraft(name + " ");
+      setMenuForced(false);
+      inputRef.current?.focus();
+      return;
+    }
+    submit(name);
+  }
+
   function onKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
     const navigating = showMenu && matches.length && (filtering || !draft);
     if (navigating) {
@@ -745,7 +641,7 @@ function Composer({ bot }: { bot: Bot }) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (filtering && matches.length) {
-        submit(matches[Math.min(menuIndex, matches.length - 1)]?.name ?? draft);
+        chooseCommand(matches[Math.min(menuIndex, matches.length - 1)]?.name ?? draft);
         return;
       }
       submit(draft);
@@ -761,7 +657,7 @@ function Composer({ bot }: { bot: Bot }) {
               <button
                 type="button"
                 onMouseEnter={() => setMenuIndex(i)}
-                onClick={() => submit(cmd.name)}
+                onClick={() => chooseCommand(cmd.name)}
                 className={`flex w-full items-baseline gap-3 px-3 py-2.5 text-left ${i === menuIndex ? "bg-elevated" : ""}`}
               >
                 <span className={`w-40 shrink-0 font-medium ${cmd.danger ? "text-danger" : "text-fg"}`}>{cmd.name}</span>
@@ -827,180 +723,20 @@ function Composer({ bot }: { bot: Bot }) {
 }
 
 function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
-  const toggleOnline = useDesk((s) => s.toggleOnline);
-  const removeBot = useDesk((s) => s.removeBot);
-  const configureBot = useDesk((s) => s.configureBot);
   const updateCommands = useDesk((s) => s.updateCommands);
-  const [confirm, setConfirm] = useState(false);
   const [editingCommands, setEditingCommands] = useState(false);
   const [commandDraft, setCommandDraft] = useState(commandLines(bot.commands));
-  const [connectionError, setConnectionError] = useState("");
-
-  async function connectScript() {
-    setConnectionError("");
-    let scriptPath = bot.scriptPath;
-    if (!scriptPath) {
-      scriptPath = (await window.wire?.selectScript()) ?? undefined;
-      if (!scriptPath) return;
-      configureBot(bot.id, { scriptPath });
-    }
-    if (bot.online) {
-      const confirmed = window.confirm("Stopping this script also stops its automated trading logic. Any open exchange positions remain open but will no longer be managed by this process. Stop it?");
-      if (!confirmed) return;
-      const result = await window.wire?.stopBot(bot.bridgePort ?? 47832);
-      if (result && !result.ok) setConnectionError(result.error || "Could not stop this WIRE-launched script.");
-      return;
-    }
-    const confirmed = window.confirm("WIRE must launch this Python script to attach its commands and live notifications. Stop any existing copy of this same bot first to avoid running two trading instances. Continue?");
-    if (!confirmed) return;
-    const result = await window.wire?.startBot({ scriptPath, port: bot.bridgePort ?? 47832, pythonPath: bot.pythonPath });
-    if (result && !result.ok) setConnectionError(result.error || "Could not start the script.");
-  }
-
   return (
     <aside className="absolute inset-y-0 right-0 z-30 flex w-full min-h-0 flex-col border-l border-line bg-sidebar sm:w-80 xl:static">
-      <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="font-semibold">Details</h2>
-        <button type="button" onClick={onClose} className="grid size-10 place-items-center rounded-full hover:bg-elevated" aria-label="Close details">
-          <X className="size-5" />
-        </button>
-      </div>
+      <div className="flex items-center justify-between px-4 py-3"><h2 className="font-semibold">Bot details</h2><button type="button" onClick={onClose} className="grid size-10 place-items-center rounded-full hover:bg-elevated" aria-label="Close details"><X className="size-5" /></button></div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-6">
-        <div className="flex items-center gap-3">
-          <Avatar name={bot.name} online={bot.online} />
-          <div>
-            <div className="font-medium">{bot.name}</div>
-            <div className="text-sm text-muted">{bot.exchange}</div>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => { if (bot.source === "bridge") void connectScript(); else toggleOnline(bot.id); }}
-          className={`w-full rounded-md px-3 py-2.5 text-sm font-medium ${bot.online ? "bg-elevated text-fg" : "bg-accent-strong text-fg"}`}
-        >
-          {bot.source === "bridge" ? (bot.online ? "Stop WIRE-launched script" : bot.scriptPath ? "Connect / start script" : "Choose Python script") : bot.online ? "Stop bot" : "Bring online"}
-        </button>
-        {bot.source === "bridge" && (
-          <section className="rounded-md bg-bg p-3 text-sm">
-            <h3 className="font-medium">Local script</h3>
-            <p className="mt-1 break-all text-xs text-muted">{bot.scriptPath || "No Python script selected"}</p>
-            {bot.pythonPath && <p className="mt-1 break-all text-xs text-muted">Python: {bot.pythonPath}</p>}
-            <p className="mt-2 text-xs text-subtle">WIRE runs the script inside its Python environment. Stop any existing copy first to avoid duplicate trading processes.</p>
-            <button type="button" className="mt-2 rounded-md bg-elevated px-3 py-2 text-xs" onClick={async () => { const result = await window.wire?.openBotLog(bot.bridgePort ?? 47832); if (result && !result.ok) setConnectionError(result.error || "Could not open the Python log."); }}>Open Python log</button>
-            {connectionError && <p className="mt-2 text-xs text-danger">{connectionError}</p>}
-          </section>
-        )}
-        {bot.source === "bridge" && (
-          <section className="rounded-md bg-bg p-3 text-sm">
-            <h3 className="font-medium">Live script pairs</h3>
-            <p className="mt-1 text-xs text-muted">USDT: {bot.lanes.USDT.symbol || "Not reported"}</p>
-            <p className="mt-1 text-xs text-muted">USDC: {bot.lanes.USDC.symbol || "Not reported"}</p>
-            <p className="mt-1 text-xs text-muted">ISAAC DCA: {bot.isaac.symbol || "Not reported"}</p>
-          </section>
-        )}
-        {bot.source === "bridge" && (
-          <section className="rounded-md bg-bg p-3 text-sm">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="font-medium">Bot commands</h3>
-              <button type="button" className="text-xs text-accent" onClick={() => { setCommandDraft(commandLines(bot.commands)); setEditingCommands((v) => !v); }}>
-                {editingCommands ? "Cancel" : "Edit commands"}
-              </button>
-            </div>
-            {editingCommands ? (
-              <>
-                <p className="mt-1 text-xs text-muted">One command per line: /command | description. This edits WIRE’s command menu; the Python script must already implement each command.</p>
-                <textarea value={commandDraft} onChange={(e) => setCommandDraft(e.target.value)} rows={7} className="mt-2 w-full rounded-md bg-sidebar p-2 font-mono text-xs text-fg outline-none" placeholder="/status | Show bot status&#10;/balance | Show wallet balance" />
-                <button type="button" className="mt-2 rounded-md bg-accent-strong px-3 py-2 text-xs font-medium" onClick={() => { updateCommands(bot.id, parseCommandLines(commandDraft)); setEditingCommands(false); }}>
-                  Save commands
-                </button>
-              </>
-            ) : <p className="mt-1 text-xs text-muted">{(bot.commands ?? []).length} command entries configured</p>}
-          </section>
-        )}
-        <p className="text-xs leading-relaxed text-subtle">The menu button next to the message box opens this bot’s command list. Type / to filter it. Alt+1 to Alt+9 switches bots. Tab completes a command, Enter sends it.</p>
-        {!confirm ? (
-          <button type="button" onClick={() => setConfirm(true)} className="text-sm text-danger">Remove this bot</button>
-        ) : (
-          <div className="flex gap-2">
-            <button type="button" onClick={() => removeBot(bot.id)} className="rounded-md bg-danger px-3 py-2 text-sm font-medium text-fg">Remove</button>
-            <button type="button" onClick={() => setConfirm(false)} className="rounded-md bg-elevated px-3 py-2 text-sm">Keep</button>
-          </div>
-        )}
+        <div className="flex items-center gap-3"><Avatar name={bot.name} online={bot.online} /><div><div className="font-medium">{bot.name}</div><div className={`text-sm ${bot.online ? "text-online" : "text-muted"}`}>{bot.online ? "Online" : "Offline"}</div></div></div>
+        <section className="rounded-md bg-bg p-3 text-sm">
+          <div className="flex items-center justify-between gap-2"><h3 className="font-medium">Command menu</h3><button type="button" className="text-xs text-accent" onClick={() => { setCommandDraft(commandLines(bot.commands)); setEditingCommands((v) => !v); }}>{editingCommands ? "Cancel" : "Edit commands"}</button></div>
+          {editingCommands ? <><p className="mt-1 text-xs text-muted">One command per line: /command | description.</p><textarea value={commandDraft} onChange={(e) => setCommandDraft(e.target.value)} rows={10} className="mt-2 w-full rounded-md bg-sidebar p-2 font-mono text-xs text-fg outline-none" /><button type="button" className="mt-2 rounded-md bg-accent-strong px-3 py-2 text-xs font-medium" onClick={() => { updateCommands(bot.id, parseCommandLines(commandDraft)); setEditingCommands(false); }}>Save commands</button></> : <p className="mt-1 text-xs text-muted">{(bot.commands ?? []).length} commands</p>}
+        </section>
       </div>
     </aside>
   );
 }
 
-function BotFatherDialog({ onClose }: { onClose: () => void }) {
-  const addBot = useDesk((s) => s.addBot);
-  const existingBots = useDesk((s) => s.bots);
-  const [name, setName] = useState("");
-  const [exchange, setExchange] = useState<Exchange>("Binance");
-  const [scriptPath, setScriptPath] = useState("");
-  const [pythonPath, setPythonPath] = useState("");
-  const [commands, setCommands] = useState("");
-  const [error, setError] = useState("");
-  const options: Exchange[] = ["Binance Testnet", "Binance", "Bybit", "Bitget"];
-
-  return (
-    <div className="fixed inset-0 z-40 grid place-items-center bg-bg/70 px-4">
-      <form
-        className="w-full max-w-md rounded-lg bg-sidebar p-5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!name.trim() || !scriptPath.trim()) {
-            setError("Enter a bot name and select its Python script.");
-            return;
-          }
-          let port = 47832;
-          while (existingBots.some((bot) => bot.bridgePort === port)) port += 1;
-          addBot({ name: name.trim(), exchange, scriptPath: scriptPath.trim(), pythonPath: pythonPath.trim() || undefined, bridgePort: port, commands: parseCommandLines(commands) });
-          onClose();
-        }}
-      >
-        <h2 className="text-lg font-semibold">BotFather</h2>
-        <p className="mt-1 text-sm text-muted">Your WIRE bot manager. Register any local Python script, then connect it to its own chat. WIRE does not include a trading script or simulated bot.</p>
-        <label className="mt-4 block text-xs font-medium text-muted">
-          Bot name
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="My trading bot" className="mt-1 w-full rounded-md bg-bg px-3 py-2.5 text-sm text-fg outline-none" />
-        </label>
-        <label className="mt-3 block text-xs font-medium text-muted">
-          Python script
-          <div className="mt-1 flex gap-2">
-            <input value={scriptPath} onChange={(e) => setScriptPath(e.target.value)} placeholder="Choose a .py file" className="min-w-0 flex-1 rounded-md bg-bg px-3 py-2.5 text-xs text-fg outline-none" />
-            <button type="button" onClick={async () => {
-              const selected = await window.wire?.selectScript();
-              if (selected) {
-                setScriptPath(selected);
-                if (!name.trim()) setName(selected.split(/[\\/]/).pop()?.replace(/\.py$/i, "") || "Local bot");
-              }
-            }} className="rounded-md bg-elevated px-3 py-2 text-xs text-fg">Browse…</button>
-          </div>
-        </label>
-        <label className="mt-3 block text-xs font-medium text-muted">
-          Python interpreter (optional; auto-detected when possible)
-          <div className="mt-1 flex gap-2">
-            <input value={pythonPath} onChange={(e) => setPythonPath(e.target.value)} placeholder="python.exe (optional)" className="min-w-0 flex-1 rounded-md bg-bg px-3 py-2.5 text-xs text-fg outline-none" />
-            <button type="button" onClick={async () => { const selected = await window.wire?.selectPython(); if (selected) setPythonPath(selected); }} className="rounded-md bg-elevated px-3 py-2 text-xs text-fg">Browse…</button>
-          </div>
-        </label>
-        <label className="mt-3 block text-xs font-medium text-muted">
-          Exchange / account label
-          <select value={exchange} onChange={(e) => setExchange(e.target.value as Exchange)} className="mt-1 w-full rounded-md bg-bg px-3 py-2.5 text-sm text-fg outline-none">
-            {options.map((o) => <option key={o}>{o}</option>)}
-          </select>
-        </label>
-        <label className="mt-3 block text-xs font-medium text-muted">
-          Command menu (one per line: /command | description)
-          <textarea value={commands} onChange={(e) => setCommands(e.target.value)} rows={4} placeholder={"/status | Show current status\n/balance | Show wallet balance"} className="mt-1 w-full rounded-md bg-bg px-3 py-2.5 font-mono text-xs text-fg outline-none" />
-        </label>
-        <p className="mt-2 text-xs text-subtle">Command descriptions customize WIRE’s menu. The Python script must implement each command handler.</p>
-        {error && <p className="mt-2 text-xs text-danger">{error}</p>}
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-sm text-muted">Cancel</button>
-          <button type="submit" className="rounded-md bg-accent-strong px-4 py-2 text-sm font-medium text-fg">Create bot chat</button>
-        </div>
-      </form>
-    </div>
-  );
-}
