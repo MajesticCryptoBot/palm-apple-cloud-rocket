@@ -785,7 +785,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
     }
     const confirmed = window.confirm("WIRE must launch this Python script to attach its commands and live notifications. Stop any existing copy of this same bot first to avoid running two trading instances. Continue?");
     if (!confirmed) return;
-    const result = await window.wire?.startBot({ scriptPath, port: bot.bridgePort ?? 47832 });
+    const result = await window.wire?.startBot({ scriptPath, port: bot.bridgePort ?? 47832, pythonPath: bot.pythonPath });
     if (result && !result.ok) setConnectionError(result.error || "Could not start the script.");
   }
 
@@ -816,6 +816,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
           <section className="rounded-md bg-bg p-3 text-sm">
             <h3 className="font-medium">Local script</h3>
             <p className="mt-1 break-all text-xs text-muted">{bot.scriptPath || "No Python script selected"}</p>
+            {bot.pythonPath && <p className="mt-1 break-all text-xs text-muted">Python: {bot.pythonPath}</p>}
             <p className="mt-2 text-xs text-subtle">WIRE runs the script inside its Python environment. Stop any existing copy first to avoid duplicate trading processes.</p>
             {connectionError && <p className="mt-2 text-xs text-danger">{connectionError}</p>}
           </section>
@@ -895,6 +896,7 @@ function AddBotDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [exchange, setExchange] = useState<Exchange>("Binance");
   const [scriptPath, setScriptPath] = useState("");
+  const [pythonPath, setPythonPath] = useState("");
   const [commands, setCommands] = useState("");
   const [error, setError] = useState("");
   const options: Exchange[] = ["Binance Testnet", "Binance", "Bybit", "Bitget"];
@@ -911,7 +913,7 @@ function AddBotDialog({ onClose }: { onClose: () => void }) {
           }
           let port = 47832;
           while (existingBots.some((bot) => bot.bridgePort === port)) port += 1;
-          addBot({ name: name.trim(), exchange, scriptPath: scriptPath.trim(), bridgePort: port, commands: parseCommandLines(commands) });
+          addBot({ name: name.trim(), exchange, scriptPath: scriptPath.trim(), pythonPath: pythonPath.trim() || undefined, bridgePort: port, commands: parseCommandLines(commands) });
           onClose();
         }}
       >
@@ -932,6 +934,13 @@ function AddBotDialog({ onClose }: { onClose: () => void }) {
                 if (!name.trim()) setName(selected.split(/[\\/]/).pop()?.replace(/\.py$/i, "") || "Local bot");
               }
             }} className="rounded-md bg-elevated px-3 py-2 text-xs text-fg">Browse…</button>
+          </div>
+        </label>
+        <label className="mt-3 block text-xs font-medium text-muted">
+          Python interpreter (optional; auto-detected when possible)
+          <div className="mt-1 flex gap-2">
+            <input value={pythonPath} onChange={(e) => setPythonPath(e.target.value)} placeholder="python.exe (optional)" className="min-w-0 flex-1 rounded-md bg-bg px-3 py-2.5 text-xs text-fg outline-none" />
+            <button type="button" onClick={async () => { const selected = await window.wire?.selectPython(); if (selected) setPythonPath(selected); }} className="rounded-md bg-elevated px-3 py-2 text-xs text-fg">Browse…</button>
           </div>
         </label>
         <label className="mt-3 block text-xs font-medium text-muted">
