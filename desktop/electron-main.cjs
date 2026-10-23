@@ -83,6 +83,7 @@ function registerIpc() {
     if (!Number.isInteger(port) || port < 47832 || port > 47999) return { ok: false, error: "Invalid local bridge port." };
     const health = await requestHealth(port);
     if (health?.connected) return { ok: true, alreadyRunning: true };
+    if (health) return { ok: false, error: "A WIRE bridge is already listening on this port, but its script is not attached. Stop that session or check its Python error before starting it again." };
     const existing = runningBots.get(port);
     if (existing && !existing.killed) return { ok: true, starting: true };
     const selectedPython = String(config?.pythonPath || "");
@@ -90,7 +91,7 @@ function registerIpc() {
     if (!python) {
       return {
         ok: false,
-        error: "WIRE could not find this bot's Python virtual environment. Place its python.exe in the script folder's .venv\\Scripts folder, or configure the interpreter in a future WIRE settings update.",
+        error: "WIRE could not find this bot's Python environment. Choose the matching python.exe when adding this bot, or place it in the script folder's .venv\\Scripts folder.",
       };
     }
     const bridgePath = appFile("bridge", "wire_bridge.py");
@@ -117,6 +118,8 @@ function registerIpc() {
   });
   ipcMain.handle("wire:stop-bot", async (_event, rawPort) => {
     const port = Number(rawPort);
+    const health = await requestHealth(port);
+    if (!health) return { ok: false, error: "The local bridge is not responding. WIRE will not terminate a process based on a stale process ID." };
     const child = runningBots.get(port);
     const registry = readRegistry();
     const pid = child?.pid || Number(registry[String(port)]);
