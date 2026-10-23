@@ -1518,3 +1518,24 @@ export function makeLocalBot(now = Date.now()): Bot {
 export function seedBots(now = Date.now()): Bot[] {
   return [makeLocalBot(now)];
 }
+
+export function previewLine(bot: Bot): string {
+  if (bot.typing) return "typing...";
+  const last = [...bot.messages].reverse().find((m) => m.from !== "service") ?? bot.messages[bot.messages.length - 1];
+  if (!last) return bot.online ? "online" : "offline";
+  const who = last.from === "me" ? "You: " : "";
+  return (who + last.text).replace(/\s+/g, " ").slice(0, 86);
+}
+
+export function laneQuotes(bot: Bot): { pair: string; price: number; pnl: number | null }[] {
+  const out: { pair: string; price: number; pnl: number | null }[] = [];
+  for (const lane of ["USDT", "USDC"] as Lane[]) {
+    const st = bot.lanes[lane];
+    if (!st.symbol) continue;
+    const price = priceOf(bot, st.symbol);
+    if (!price) continue;
+    const pnl = st.position ? ((price - st.position.entry) / st.position.entry) * 100 : null;
+    out.push({ pair: st.symbol, price, pnl });
+  }
+  return out;
+}
