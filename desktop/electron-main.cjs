@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -10,6 +10,7 @@ const runningBots = new Map();
 let serverProcess;
 
 function registryPath() { return path.join(app.getPath("userData"), "wire-processes.json"); }
+function botLogPath(port) { return path.join(app.getPath("userData"), "logs", "bot-" + port + ".log"); }
 function readRegistry() {
   try { return JSON.parse(fs.readFileSync(registryPath(), "utf8")); } catch { return {}; }
 }
@@ -72,6 +73,15 @@ function registerIpc() {
     return result.canceled ? null : result.filePaths[0] || null;
   });
   ipcMain.handle("wire:default-script", () => getDefaultScriptPath());
+  ipcMain.handle("wire:open-bot-log", async (_event, rawPort) => {
+    const port = Number(rawPort);
+    if (!Number.isInteger(port) || port < 47832 || port > 47999) return { ok: false, error: "Invalid bot port." };
+    const logPath = botLogPath(port);
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    if (!fs.existsSync(logPath)) fs.writeFileSync(logPath, "WIRE has not started this bot yet.\n", "utf8");
+    const error = await shell.openPath(logPath);
+    return error ? { ok: false, error } : { ok: true };
+  });
   ipcMain.handle("wire:select-python", async () => {
     const result = await dialog.showOpenDialog({ title: "Choose the Python interpreter for this bot", properties: ["openFile"], filters: [{ name: "Python executable", extensions: ["exe"] }] });
     return result.canceled ? null : result.filePaths[0] || null;
@@ -96,19 +106,25 @@ function registerIpc() {
     }
     const bridgePath = appFile("bridge", "wire_bridge.py");
     if (!fs.existsSync(bridgePath)) return { ok: false, error: "WIRE's local bridge is missing from the installation." };
+    const logPath = botLogPath(port);
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, "\n[WIRE] Starting " + scriptPath + " at " + new Date().toISOString() + "\n", "utf8");
+    const logFd = fs.openSync(logPath, "a");
     const child = spawn(python, [bridgePath, "--run", scriptPath, "--port", String(port), "--no-browser"], {
       cwd: path.dirname(scriptPath),
       windowsHide: true,
       detached: true,
-      stdio: "ignore",
+      stdio: ["ignore", logFd, logFd],
       env: { ...process.env, PYTHONUNBUFFERED: "1" },
     });
+    fs.closeSync(logFd);
     child.unref();
     runningBots.set(port, child);
     const registry = readRegistry();
     registry[String(port)] = child.pid;
     writeRegistry(registry);
-    child.on("exit", () => {
+    child.on("exit", (code, signal) => {
+      fs.appendFileSync(botLogPath(port), "\n[WIRE] Script process exited with code " + code + " and signal " + (signal || "none") + " at " + new Date().toISOString() + "\n", "utf8");
       if (runningBots.get(port) === child) runningBots.delete(port);
       const current = readRegistry();
       if (Number(current[String(port)]) === child.pid) { delete current[String(port)]; writeRegistry(current); }
