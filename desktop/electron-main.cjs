@@ -116,9 +116,8 @@ function startLocalServer() {
     execPath: process.execPath,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", HOST: "127.0.0.1", PORT: String(APP_PORT), NODE_ENV: "production" },
     stdio: "ignore",
-    detached: true,
+    detached: false,
   });
-  serverProcess.unref();
 }
 
 async function createWindow() {
@@ -146,6 +145,9 @@ app.whenReady().then(() => {
     dialog.showErrorBox("WIRE could not start", String(error?.message || error));
     app.quit();
   });
+});
+app.on("before-quit", () => {
+  if (serverProcess && !serverProcess.killed) serverProcess.kill();
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
