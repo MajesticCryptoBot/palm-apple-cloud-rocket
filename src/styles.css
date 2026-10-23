@@ -142,3 +142,111 @@
     animation: none;
   }
 }
+
+
+/* Premium WIRE finish: depth, subtle color, and consistent interaction states. */
+:root {
+  --wire-glow: rgba(91, 156, 255, 0.13);
+  --wire-glass: rgba(255, 255, 255, 0.035);
+  --wire-shadow: 0 18px 50px rgba(0, 0, 0, 0.24);
+}
+
+body {
+  background:
+    radial-gradient(ellipse at 8% -10%, var(--wire-glow), transparent 38%),
+    radial-gradient(ellipse at 100% 100%, rgba(49, 114, 170, 0.075), transparent 42%),
+    var(--color-bg);
+  letter-spacing: 0.005em;
+}
+
+.bg-sidebar {
+  background-image: linear-gradient(145deg, rgba(255,255,255,0.025), transparent 48%);
+}
+
+.bg-elevated {
+  background-image: linear-gradient(135deg, rgba(255,255,255,0.045), rgba(255,255,255,0.008));
+}
+
+.bg-bubble-in {
+  background-image: linear-gradient(145deg, rgba(255,255,255,0.035), transparent 72%);
+}
+
+.bg-bubble-out {
+  background-image: linear-gradient(145deg, rgba(122,195,255,0.10), transparent 75%);
+}
+
+.thread-bg {
+  background-image:
+    radial-gradient(ellipse at 14% 0%, var(--wire-glow), transparent 42%),
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.028) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 70% 60%, rgba(255, 255, 255, 0.022) 0 1px, transparent 1.5px);
+  background-size: auto, 28px 28px, 36px 36px;
+}
+
+button, input, textarea, select {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px) scale(0.99);
+}
+
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 72%, transparent);
+  outline-offset: 2px;
+}
+
+input, textarea, select {
+  border-color: color-mix(in srgb, var(--color-line) 78%, var(--color-muted));
+}
+
+input:focus, textarea:focus, select:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
+.bubble {
+  border: 1px solid rgba(255,255,255,0.045);
+  box-shadow: 0 5px 18px rgba(0,0,0,0.10), inset 0 1px 0 rgba(255,255,255,0.025);
+  backdrop-filter: blur(5px);
+}
+
+.bubble-out {
+  border-color: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+
+.wire-settings-dialog {
+  background:
+    radial-gradient(ellipse at 100% 0%, var(--wire-glow), transparent 48%),
+    linear-gradient(145deg, color-mix(in srgb, var(--color-sidebar) 96%, white 4%), var(--color-sidebar));
+  box-shadow: 0 30px 100px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.025);
+  backdrop-filter: blur(24px);
+}
+
+.wire-theme-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(255,255,255,0.045), rgba(255,255,255,0.008));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+}
+
+.wire-theme-card:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 56%, var(--color-line));
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  transform: translateY(-1px);
+}
+
+.wire-theme-card.is-selected {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--color-accent-strong) 22%, var(--color-sidebar)), var(--color-sidebar));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 22%, transparent), 0 8px 28px rgba(0,0,0,0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button, input, textarea, select {
+    transition: none;
+  }
+}

@@ -3,7 +3,7 @@ name: Build WIRE Windows Installer
 on:
   workflow_dispatch:
   push:
-    branches: [wire-real-bots-installer, wire-botfather-settings-v1]
+    branches: [wire-real-bots-installer, wire-botfather-settings-v1, wire-command-bridge-premium-theme]
     paths:
       - "desktop/**"
       - "src/**"

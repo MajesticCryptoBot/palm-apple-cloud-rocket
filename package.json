@@ -137,7 +137,7 @@
       "createStartMenuShortcut": true
     }
   },
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Private local desktop chat for managing Python bots",
   "author": "MajesticCryptoBot"
 }
