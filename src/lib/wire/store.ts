@@ -84,7 +84,8 @@ declare global {
     wire?: {
       selectScript: () => Promise<string | null>;
       selectPython: () => Promise<string | null>;
-      getDefaultScript: () => Promise<string | null>;
+      selectWallpaper: () => Promise<string | null>;
+      showNotification: (payload: { title: string; body: string; silent?: boolean }) => Promise<{ ok: boolean }>;
       openBotLog: (port: number) => Promise<{ ok: boolean; error?: string }>;
       startBot: (config: { scriptPath: string; port: number; pythonPath?: string }) => Promise<{ ok: boolean; error?: string }>;
       stopBot: (port: number) => Promise<{ ok: boolean; error?: string }>;
@@ -179,6 +180,12 @@ async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => voi
       }),
     }));
     soundFor(allReplies, targets.some((b) => b.id === activeId), sound);
+    const notificationStyle = (() => { try { return localStorage.getItem("wire-notification-style") || "system-and-chat"; } catch { return "system-and-chat"; } })();
+    if (notificationStyle === "system-and-chat" || notificationStyle === "system-only") {
+      for (const reply of allReplies.slice(-3)) {
+        void window.wire?.showNotification({ title: "WIRE · Trading notification", body: reply.text.replace(/\\s+/g, " ").slice(0, 240), silent: notificationStyle === "system-only" });
+      }
+    }
   } finally { polling = false; }
 }
 
