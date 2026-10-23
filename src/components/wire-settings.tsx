@@ -18,10 +18,24 @@ const themes = {
     "--color-fg": "#f3f8ff", "--color-muted": "#a5bdd9", "--color-subtle": "#7894b6",
     "--color-line": "#213a57", "--color-online": "#64e2b1",
   },
+  aurora: {
+    "--color-bg": "#09151a", "--color-sidebar": "#10252a", "--color-elevated": "#1a3538",
+    "--color-bubble-in": "#173238", "--color-bubble-out": "#245c61",
+    "--color-accent": "#7ce7d1", "--color-accent-strong": "#278c83",
+    "--color-fg": "#effdfa", "--color-muted": "#a1c8c4", "--color-subtle": "#739d98",
+    "--color-line": "#234447", "--color-online": "#66e2a9",
+  },
+  graphite: {
+    "--color-bg": "#111318", "--color-sidebar": "#1b1e25", "--color-elevated": "#292e38",
+    "--color-bubble-in": "#252b34", "--color-bubble-out": "#414c66",
+    "--color-accent": "#b4c7ff", "--color-accent-strong": "#5c72b8",
+    "--color-fg": "#f7f8fc", "--color-muted": "#b3bac8", "--color-subtle": "#858e9f",
+    "--color-line": "#303642", "--color-online": "#7bd9b0",
+  },
 } as const;
 
 function applyTheme(theme: string) {
-  const palette = theme === "midnight" ? themes.midnight : themes.black;
+  const palette = theme === "aurora" ? themes.aurora : theme === "graphite" ? themes.graphite : theme === "midnight" ? themes.midnight : themes.black;
   for (const [key, value] of Object.entries(palette)) document.documentElement.style.setProperty(key, value);
   document.documentElement.dataset.wireTheme = theme;
 }
@@ -96,6 +110,12 @@ export function WireSettings({ botId, onClose }: Props) {
               </button>
               <button onClick={() => chooseTheme("midnight")} className={`wire-theme-card rounded-xl border p-3 text-left ${theme === "midnight" ? "is-selected border-accent" : "border-line"}`}>
                 <div className="mb-2 flex gap-1"><span className="h-7 flex-1 rounded bg-[#081426]" /><span className="h-7 flex-1 rounded bg-[#1a3150]" /><span className="h-7 flex-1 rounded bg-[#244d75]" /></div><span className="font-medium">Midnight blue</span><span className="block text-xs text-muted">Telegram-inspired navy</span>
+              </button>
+              <button onClick={() => chooseTheme("aurora")} className="wire-theme-card rounded-xl border border-line p-3 text-left">
+                <div className="mb-2 flex gap-1"><span className="h-7 flex-1 rounded bg-[#09151a]" /><span className="h-7 flex-1 rounded bg-[#1a3538]" /><span className="h-7 flex-1 rounded bg-[#245c61]" /></div><span className="font-medium">Aurora teal</span><span className="block text-xs text-muted">Cool teal accents</span>
+              </button>
+              <button onClick={() => chooseTheme("graphite")} className="wire-theme-card rounded-xl border border-line p-3 text-left">
+                <div className="mb-2 flex gap-1"><span className="h-7 flex-1 rounded bg-[#111318]" /><span className="h-7 flex-1 rounded bg-[#292e38]" /><span className="h-7 flex-1 rounded bg-[#414c66]" /></div><span className="font-medium">Graphite</span><span className="block text-xs text-muted">Soft slate contrast</span>
               </button>
             </div>
           </section>
