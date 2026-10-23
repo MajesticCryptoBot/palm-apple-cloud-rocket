@@ -73,7 +73,7 @@ function soundFor(replies: Reply[], active: boolean, sound: boolean) {
 
 type ScriptSnapshot = { symbol?: string | null; symbol2?: string | null; main_usdt?: number; main_usdc?: number; rescue_usdt?: number; rescue_usdc?: number; isaac_allocated?: number; ts?: string };
 
-export const BRIDGE_DIRECTORY = String.raw`C:\Users\pauld\Desktop\ABINANCE TESTNET`;
+export const BRIDGE_DIRECTORY = ["C:", "Users", "pauld", "Desktop", "ABINANCE TESTNET"].join("\\");
 
 declare global {
   interface Window {
@@ -97,7 +97,6 @@ function toneFor(text: string): { tone: Tone; mono: boolean } {
   return { tone: alert ? "alert" : trade ? "trade" : "normal", mono: text.includes("\n") || text.startsWith("Spot Wallet") };
 }
 
-const liveSeqByPort = new Map<number, number>();
 const bridgeUpByPort = new Map<number, boolean>();
 let polling = false;
 
