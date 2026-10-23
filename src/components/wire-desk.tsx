@@ -818,6 +818,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
             <p className="mt-1 break-all text-xs text-muted">{bot.scriptPath || "No Python script selected"}</p>
             {bot.pythonPath && <p className="mt-1 break-all text-xs text-muted">Python: {bot.pythonPath}</p>}
             <p className="mt-2 text-xs text-subtle">WIRE runs the script inside its Python environment. Stop any existing copy first to avoid duplicate trading processes.</p>
+            <button type="button" className="mt-2 rounded-md bg-elevated px-3 py-2 text-xs" onClick={async () => { const result = await window.wire?.openBotLog(bot.bridgePort ?? 47832); if (result && !result.ok) setConnectionError(result.error || "Could not open the Python log."); }}>Open Python log</button>
             {connectionError && <p className="mt-2 text-xs text-danger">{connectionError}</p>}
           </section>
         )}
