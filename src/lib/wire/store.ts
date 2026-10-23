@@ -85,7 +85,7 @@ declare global {
       selectScript: () => Promise<string | null>;
       getDefaultScript: () => Promise<string | null>;
       startBot: (config: { scriptPath: string; port: number }) => Promise<{ ok: boolean; error?: string }>;
-      stopBot: (port: number) => Promise<void>;
+      stopBot: (port: number) => Promise<{ ok: boolean; error?: string }>;
     };
   }
 }
@@ -440,7 +440,7 @@ export const useDesk = create<DeskState>()(
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<DeskState>;
         if (!saved.bots?.length) return { ...current, ...saved };
-        const bots = saved.bots.map((b) => ({
+        const bots = saved.bots.filter((b) => b.source === "bridge" || b.name === "ABinanceTradingBot (local)").map((b) => ({
           ...b,
           typing: false,
           source: b.source ?? (b.name === "ABinanceTradingBot (local)" ? "bridge" : "engine"),
