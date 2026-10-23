@@ -156,7 +156,7 @@ export function Desk() {
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setAdding(true)}
+              onClick={() => { setBotfatherOpen(true); setListMode(false); }}
               className="grid size-10 place-items-center rounded-full bg-elevated text-accent hover:bg-bubble-out"
               aria-label="Open BotFather to add a bot"
               title="BotFather · Add/manage scripts"
