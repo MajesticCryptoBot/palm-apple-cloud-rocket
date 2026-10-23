@@ -119,6 +119,7 @@ async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => voi
       let reachable = false;
       let connected = false;
       let items: { text: string; ts?: number }[] = [];
+      let snapshot: ScriptSnapshot | null = null;
       try {
         const health = await fetch(`http://127.0.0.1:${port}/health`, { cache: "no-store" });
         if (health.ok) {
@@ -131,11 +132,17 @@ async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => voi
             if (typeof data.latest === "number") liveSeqByPort.set(port, data.latest);
             items = Array.isArray(data.items) ? data.items : [];
           }
+          if (connected) {
+            try {
+              const snap = await fetch(`http://127.0.0.1:${port}/snapshot`, { cache: "no-store" });
+              if (snap.ok) snapshot = (await snap.json()) as ScriptSnapshot;
+            } catch { /* live notifications still work */ }
+          }
         }
       } catch { reachable = false; }
       const previous = bridgeUpByPort.get(port);
       bridgeUpByPort.set(port, connected);
-      return { id: bot.id, port, reachable, connected, changed: previous !== connected, items };
+      return { id: bot.id, port, reachable, connected, changed: previous !== undefined && previous !== connected, items, snapshot };
     }));
     const now = Date.now();
     const activeId = get().activeId;
@@ -160,9 +167,16 @@ async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => voi
           extra.push({ id: uid("m"), from: "bot", text, ts: item.ts ? Math.round(Number(item.ts) * 1000) : now, tone: look.tone, mono: look.mono });
           allReplies.push({ text, tone: look.tone, mono: look.mono });
         }
-        if (!extra.length) return { ...bot, online: result.connected, lastSeen: result.connected ? now : bot.lastSeen };
+        const liveState = result.snapshot ? {
+          lanes: {
+            USDT: { ...bot.lanes.USDT, symbol: result.snapshot.activePair ?? null, lastSymbol: result.snapshot.activePair ?? bot.lanes.USDT.lastSymbol },
+            USDC: { ...bot.lanes.USDC, symbol: result.snapshot.activePairUSDC ?? null, lastSymbol: result.snapshot.activePairUSDC ?? bot.lanes.USDC.lastSymbol },
+          },
+          isaac: { ...bot.isaac, symbol: result.snapshot.isaacPair ?? "" },
+        } : {};
+        if (!extra.length) return { ...bot, ...liveState, online: result.connected, lastSeen: result.connected ? now : bot.lastSeen };
         const active = bot.id === activeId;
-        return { ...bot, online: result.connected, lastSeen: now, messages: [...bot.messages, ...extra].slice(-500), unread: active ? 0 : bot.unread + extra.filter((m) => m.from === "bot").length };
+        return { ...bot, ...liveState, online: result.connected, lastSeen: now, messages: [...bot.messages, ...extra].slice(-500), unread: active ? 0 : bot.unread + extra.filter((m) => m.from === "bot").length };
       }),
     }));
     soundFor(allReplies, targets.some((b) => b.id === activeId), sound);
@@ -364,8 +378,8 @@ export const useDesk = create<DeskState>()(
                   if (b.id !== id) return b;
                   const lanes = snapshot
                     ? {
-                        USDT: { ...b.lanes.USDT, symbol: snapshot.activePair || b.lanes.USDT.symbol, lastSymbol: snapshot.activePair || b.lanes.USDT.lastSymbol },
-                        USDC: { ...b.lanes.USDC, symbol: snapshot.activePairUSDC || b.lanes.USDC.symbol, lastSymbol: snapshot.activePairUSDC || b.lanes.USDC.lastSymbol },
+                        USDT: { ...b.lanes.USDT, symbol: snapshot.activePair ?? null, lastSymbol: snapshot.activePair ?? b.lanes.USDT.lastSymbol },
+                        USDC: { ...b.lanes.USDC, symbol: snapshot.activePairUSDC ?? null, lastSymbol: snapshot.activePairUSDC ?? b.lanes.USDC.lastSymbol },
                       }
                     : b.lanes;
                   return {
