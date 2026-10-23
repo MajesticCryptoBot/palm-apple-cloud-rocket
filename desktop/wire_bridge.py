@@ -246,6 +246,10 @@ def install_patches() -> None:
         async def send_message(self, *args, **kwargs):
             text = kwargs.get("text", args[1] if len(args) > 1 else "")
             BRIDGE.publish("" if text is None else str(text))
+            # WIRE command replies are already delivered to the local chat. Do
+            # not make command handling depend on a second Telegram API request.
+            if BRIDGE._cmd_replies is not None:
+                return None
             return await orig_send(self, *args, **kwargs)
 
         send_message._wire = True  # type: ignore[attr-defined]
