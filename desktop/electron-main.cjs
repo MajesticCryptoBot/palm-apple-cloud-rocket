@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell, Notification } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, Notification, Tray, Menu } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
@@ -6,17 +6,38 @@ const os = require("node:os");
 const crypto = require("node:crypto");
 
 const APP_PORT = 47831;
-// This must match the directory configured in the user's ASP bridge script.
-const BRIDGE_DIR = path.join(os.homedir(), "Desktop", "ABINANCE TESTNET");
-const QUEUE_FILE = path.join(BRIDGE_DIR, "asp_command_queue.json");
-const RESPONSE_FILE = path.join(BRIDGE_DIR, "asp_command_response.json");
-const LIVE_FILE = path.join(BRIDGE_DIR, "asp_live_feed.json");
-const SNAPSHOT_FILE = path.join(BRIDGE_DIR, "asp_status_snapshot.json");
-const seenLiveIds = new Set();
-let firstLiveRead = true;
+const DESKTOP = path.join(os.homedir(), "Desktop");
+const DEFAULT_BRIDGE = "ABINANCE TESTNET";
+const ALLOWED_BRIDGES = new Set([
+  "ABINANCE TESTNET",
+  "BINANCE LIVE",
+  "Bitget Live Bot",
+  "Bybit Live Bot",
+  "GROK TESTNET",
+  "ZZZBinance METRICS LIVE",
+]);
+const seenLiveIds = new Map();
 let serverProcess;
+let mainWindow;
+let tray;
+let quitting = false;
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function bridgeDir(raw) {
+  const name = path.basename(String(raw || DEFAULT_BRIDGE).replace(/[\\/]+$/, ""));
+  if (!ALLOWED_BRIDGES.has(name)) throw new Error("This bot folder is not configured in WIRE.");
+  return path.join(DESKTOP, name);
+}
+function bridgeFiles(raw) {
+  const dir = bridgeDir(raw);
+  return {
+    directory: dir,
+    queue: path.join(dir, "asp_command_queue.json"),
+    response: path.join(dir, "asp_command_response.json"),
+    live: path.join(dir, "asp_live_feed.json"),
+    snapshot: path.join(dir, "asp_status_snapshot.json"),
+  };
+}
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
 }
@@ -25,30 +46,33 @@ function writeJsonAtomic(file, value) {
   fs.writeFileSync(temp, JSON.stringify(value, null, 2), "utf8");
   fs.renameSync(temp, file);
 }
-function bridgeSnapshot() {
-  const snapshot = readJson(SNAPSHOT_FILE);
-  if (!snapshot || !snapshot.ts) return { connected: false, snapshot: null, error: "Waiting for the running bot bridge to publish its status snapshot." };
+function bridgeSnapshot(raw) {
+  let files;
+  try { files = bridgeFiles(raw); } catch (error) {
+    return { connected: false, snapshot: null, error: String(error?.message || error) };
+  }
+  const snapshot = readJson(files.snapshot);
+  if (!snapshot || !snapshot.ts) return { connected: false, snapshot: null, error: "" };
   const timestamp = Date.parse(snapshot.ts);
   const fresh = Number.isFinite(timestamp) && Date.now() - timestamp < 15000 && Date.now() >= timestamp - 5000;
-  return {
-    connected: Boolean(fresh),
-    snapshot,
-    error: fresh ? "" : "Bridge snapshot is stale. Confirm the bot is running in CMD and its bridge task is active.",
-  };
+  return { connected: Boolean(fresh), snapshot, error: fresh ? "" : "" };
 }
-function readLiveItems() {
-  const entries = readJson(LIVE_FILE);
+function readLiveItems(raw) {
+  let files;
+  try { files = bridgeFiles(raw); } catch { return []; }
+  const entries = readJson(files.live);
   if (!Array.isArray(entries)) return [];
+  const key = files.directory;
+  if (!seenLiveIds.has(key)) seenLiveIds.set(key, new Set());
+  const seen = seenLiveIds.get(key);
   const fresh = [];
   for (const item of entries) {
     const id = String(item?.id ?? "");
-    if (!id || seenLiveIds.has(id)) continue;
-    seenLiveIds.add(id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
     fresh.push({ id, text: String(item?.text ?? ""), ts: item?.ts ? Date.parse(item.ts) : Date.now() });
   }
-  // The bridge itself keeps only 120 entries; cap our dedupe set too.
-  while (seenLiveIds.size > 500) seenLiveIds.delete(seenLiveIds.values().next().value);
-  if (firstLiveRead) firstLiveRead = false;
+  while (seen.size > 500) seen.delete(seen.values().next().value);
   return fresh;
 }
 function registerIpc() {
@@ -71,43 +95,34 @@ function registerIpc() {
     new Notification({ title, body, silent: Boolean(payload?.silent) }).show();
     return { ok: true };
   });
-  ipcMain.handle("wire:bridge-poll", () => {
-    const state = bridgeSnapshot();
-    const items = readLiveItems();
-    return {
-      connected: state.connected,
-      error: state.error,
-      snapshot: state.snapshot,
-      items,
-      bridgeDirectory: BRIDGE_DIR,
-    };
+  ipcMain.handle("wire:bridge-poll", (_event, rawDirectory) => {
+    const state = bridgeSnapshot(rawDirectory);
+    return { connected: state.connected, snapshot: state.snapshot, items: readLiveItems(rawDirectory), bridgeDirectory: bridgeDir(rawDirectory) };
   });
-  ipcMain.handle("wire:bridge-command", async (_event, rawCommand) => {
-    const command = String(rawCommand || "").trim();
-    if (!command || command.length > 1000) return { ok: false, error: "Enter a valid command." };
-    const state = bridgeSnapshot();
-    if (!state.connected) return { ok: false, error: state.error || "The running bot bridge is not connected. Start your bot manually in CMD." };
-    // Do not overwrite a request that the bot has not picked up yet.
-    const queueDeadline = Date.now() + 5000;
-    while (fs.existsSync(QUEUE_FILE) && Date.now() < queueDeadline) await sleep(100);
-    if (fs.existsSync(QUEUE_FILE)) return { ok: false, error: "The bot still has a queued command. Wait for it to finish, then retry." };
-    const id = crypto.randomUUID();
-    try {
-      writeJsonAtomic(QUEUE_FILE, { id, command });
-    } catch (error) {
-      return { ok: false, error: "Could not write the bridge command queue: " + String(error?.message || error) };
+  ipcMain.handle("wire:bridge-command", async (_event, payload) => {
+    const command = String(payload?.command || "").trim();
+    let files;
+    try { files = bridgeFiles(payload?.directory); } catch (error) {
+      return { ok: false, error: String(error?.message || error) };
     }
+    if (!command || command.length > 1000) return { ok: false, error: "Enter a valid command." };
+    if (!bridgeSnapshot(payload?.directory).connected) return { ok: false, error: "This bot is offline. Check its running process and bridge." };
+    const queueDeadline = Date.now() + 5000;
+    while (fs.existsSync(files.queue) && Date.now() < queueDeadline) await sleep(100);
+    if (fs.existsSync(files.queue)) return { ok: false, error: "The bot is still processing a command. Retry in a moment." };
+    const id = crypto.randomUUID();
+    try { writeJsonAtomic(files.queue, { id, command }); }
+    catch (error) { return { ok: false, error: "Could not queue command: " + String(error?.message || error) }; }
     const deadline = Date.now() + 35000;
     while (Date.now() < deadline) {
-      const response = readJson(RESPONSE_FILE);
+      const response = readJson(files.response);
       if (response && String(response.id) === id) {
         return { ok: true, text: String(response.text || "The bot completed the command without a message."), ts: response.ts || new Date().toISOString() };
       }
-      const current = bridgeSnapshot();
-      if (!current.connected) return { ok: false, error: current.error || "The bot bridge stopped responding while the command was running." };
+      if (!bridgeSnapshot(payload?.directory).connected) return { ok: false, error: "The bot stopped responding before the command completed." };
       await sleep(150);
     }
-    return { ok: false, error: "Timed out waiting for the running bot. Check the CMD window for bridge errors; WIRE did not execute a simulated command." };
+    return { ok: false, error: "The command timed out. Check the bot process and try again." };
   });
 }
 
@@ -127,7 +142,7 @@ async function waitForLocalApp() {
     if (await probeLocalApp()) return;
     await sleep(250);
   }
-  throw new Error("The WIRE local server did not become ready. Restart the app and try again.");
+  throw new Error("WIRE could not start. Restart the app and try again.");
 }
 function appFile(...parts) {
   if (app.isPackaged) return path.join(app.getAppPath(), ...parts);
@@ -136,34 +151,50 @@ function appFile(...parts) {
 }
 function startLocalServer() {
   const entry = appFile(".output", "server", "index.mjs");
-  if (!fs.existsSync(entry)) throw new Error("WIRE local web server is missing from the installation.");
+  if (!fs.existsSync(entry)) throw new Error("WIRE installation is incomplete.");
   serverProcess = require("node:child_process").spawn(process.execPath, [entry], {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", HOST: "127.0.0.1", NITRO_HOST: "127.0.0.1", PORT: String(APP_PORT), NITRO_PORT: String(APP_PORT), NODE_ENV: "production" },
     stdio: "ignore",
     detached: false,
   });
 }
+async function showWindow() {
+  if (!mainWindow) return;
+  mainWindow.show();
+  mainWindow.focus();
+}
 async function createWindow() {
   await waitForLocalApp();
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1320, height: 860, minWidth: 900, minHeight: 600,
-    backgroundColor: "#0e1621", autoHideMenuBar: true,
-    webPreferences: {
-      preload: appFile("desktop", "electron-preload.cjs"),
-      contextIsolation: true, nodeIntegration: false, sandbox: true,
-    },
+    backgroundColor: "#0e1621", autoHideMenuBar: true, show: false,
+    webPreferences: { preload: appFile("desktop", "electron-preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
-  await win.loadURL("http://127.0.0.1:" + APP_PORT);
+  mainWindow.on("ready-to-show", () => mainWindow?.show());
+  mainWindow.on("close", (event) => {
+    if (!quitting) { event.preventDefault(); mainWindow?.hide(); }
+  });
+  await mainWindow.loadURL("http://127.0.0.1:" + APP_PORT);
+  try {
+    const icon = await app.getFileIcon(process.execPath, { size: "small" });
+    tray = new Tray(icon);
+    tray.setToolTip("WIRE");
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: "Open WIRE", click: () => void showWindow() },
+      { type: "separator" },
+      { label: "Quit WIRE", click: () => { quitting = true; app.quit(); } },
+    ]));
+    tray.on("double-click", () => void showWindow());
+  } catch { /* tray is optional on restricted Windows desktops */ }
 }
 app.whenReady().then(() => {
   registerIpc();
   startLocalServer();
-  createWindow().catch((error) => {
-    dialog.showErrorBox("WIRE could not start", String(error?.message || error));
-    app.quit();
-  });
+  createWindow().catch((error) => { dialog.showErrorBox("WIRE could not start", String(error?.message || error)); app.quit(); });
 });
 app.on("before-quit", () => {
+  quitting = true;
+  if (tray) tray.destroy();
   if (serverProcess && !serverProcess.killed) serverProcess.kill();
 });
-app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+app.on("window-all-closed", () => { /* WIRE stays in the notification area until Quit is chosen. */ });
