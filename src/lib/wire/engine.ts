@@ -159,6 +159,7 @@ export type Bot = {
   typing: boolean;
   entryCooldownUntil: number;
   source: "engine" | "bridge";
+  bridgeDirectory?: string;
   bridgePort?: number;
   scriptPath?: string;
   pythonPath?: string;
