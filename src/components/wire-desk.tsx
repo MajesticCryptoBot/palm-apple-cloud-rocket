@@ -909,7 +909,8 @@ function AddBotDialog({ onClose }: { onClose: () => void }) {
             setError("Enter a bot name and select its Python script.");
             return;
           }
-          const port = 47832 + Math.max(1, existingBots.length);
+          let port = 47832;
+          while (existingBots.some((bot) => bot.bridgePort === port)) port += 1;
           addBot({ name: name.trim(), exchange, scriptPath: scriptPath.trim(), bridgePort: port, commands: parseCommandLines(commands) });
           onClose();
         }}
