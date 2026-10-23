@@ -840,13 +840,6 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
             ) : <p className="mt-1 text-xs text-muted">{(bot.commands ?? []).length} command entries configured</p>}
           </section>
         )}
-        <LaneBlock title="USDT lane" symbol={usdt.symbol} position={usdt.position} allocated={usdt.allocated} quote={bot.wallet.USDT} />
-        <LaneBlock title="USDC lane" symbol={usdc.symbol} position={usdc.position} allocated={usdc.allocated} quote={bot.wallet.USDC} />
-        <section className="rounded-md bg-bg p-3 text-sm">
-          <h3 className="font-medium">Isaac DCA</h3>
-          <p className="mt-1 text-muted">{bot.isaac.symbol} · {bot.isaac.orders.length}/7 orders · {bot.isaac.paused ? "paused" : "running"}</p>
-          <p className="font-mono text-xs text-subtle tabular-nums">Pool ${bot.isaac.virtualUsdt.toFixed(0)} / {bot.isaac.allocated.toFixed(0)}</p>
-        </section>
         <p className="text-xs leading-relaxed text-subtle">The menu button next to the message box opens this bot’s command list. Type / to filter it. Alt+1 to Alt+9 switches bots. Tab completes a command, Enter sends it.</p>
         {!confirm ? (
           <button type="button" onClick={() => setConfirm(true)} className="text-sm text-danger">Remove this bot</button>
