@@ -161,6 +161,7 @@ async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => voi
 
 const seeded = (() => {
   const bot = createBot({ name: "ABinanceTradingBot", exchange: "Binance Testnet", online: false, source: "bridge", commands: [...COMMANDS] });
+  bot.bridgeDirectory = "ABINANCE TESTNET";
   bot.wallet = {};
   bot.history = [];
   bot.prices = {};
