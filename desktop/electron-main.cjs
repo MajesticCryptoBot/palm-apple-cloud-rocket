@@ -30,9 +30,8 @@ function bridgeSnapshot() {
   if (!snapshot || !snapshot.ts) return { connected: false, snapshot: null, error: "Waiting for the running bot bridge to publish its status snapshot." };
   const timestamp = Date.parse(snapshot.ts);
   const fresh = Number.isFinite(timestamp) && Date.now() - timestamp < 15000 && Date.now() >= timestamp - 5000;
-  const filesExist = fs.existsSync(LIVE_FILE) && fs.existsSync(QUEUE_FILE) || fs.existsSync(LIVE_FILE) && fs.existsSync(RESPONSE_FILE);
   return {
-    connected: Boolean(fresh && filesExist),
+    connected: Boolean(fresh),
     snapshot,
     error: fresh ? "" : "Bridge snapshot is stale. Confirm the bot is running in CMD and its bridge task is active.",
   };
