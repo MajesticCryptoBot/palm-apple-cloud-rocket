@@ -116,10 +116,6 @@
       {
         "from": "desktop/wire_bridge.py",
         "to": "bridge/wire_bridge.py"
-      },
-      {
-        "from": "desktop/desk.html",
-        "to": "bridge/desk.html"
       }
     ],
     "win": {
