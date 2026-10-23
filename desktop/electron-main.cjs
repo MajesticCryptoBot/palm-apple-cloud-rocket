@@ -30,13 +30,16 @@ function appFile(...parts) {
 
 function findPython(scriptPath) {
   const dir = path.dirname(scriptPath);
-  const candidates = [
+  const localCandidates = [
     path.join(dir, ".venv", "Scripts", "python.exe"),
     path.join(dir, "venv", "Scripts", "python.exe"),
     path.join(path.dirname(dir), ".venv", "Scripts", "python.exe"),
-    path.join(os.homedir(), "Desktop", "IG", ".venv", "Scripts", "python.exe"),
   ];
-  return candidates.find((p) => fs.existsSync(p)) || null;
+  const pathCandidates = String(process.env.PATH || "")
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((entry) => path.join(entry.replace(/^"|"$/g, ""), "python.exe"));
+  return [...localCandidates, ...pathCandidates].find((p) => fs.existsSync(p)) || null;
 }
 
 function requestHealth(port) {
