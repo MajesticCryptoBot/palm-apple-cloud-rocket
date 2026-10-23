@@ -808,7 +808,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
         <button
           type="button"
           onClick={() => { if (bot.source === "bridge") void connectScript(); else toggleOnline(bot.id); }}
-          className={\`w-full rounded-md px-3 py-2.5 text-sm font-medium ${bot.online ? "bg-elevated text-fg" : "bg-accent-strong text-fg"}\`}
+          className={`w-full rounded-md px-3 py-2.5 text-sm font-medium ${bot.online ? "bg-elevated text-fg" : "bg-accent-strong text-fg"}`}
         >
           {bot.source === "bridge" ? (bot.online ? "Stop WIRE-launched script" : bot.scriptPath ? "Connect / start script" : "Choose Python script") : bot.online ? "Stop bot" : "Bring online"}
         </button>
