@@ -162,6 +162,9 @@ const seeded = (() => {
   const bot = createBot({ name: "ABinanceTradingBot", exchange: "Binance Testnet", online: false, source: "bridge", commands: [...COMMANDS] });
   bot.wallet = {};
   bot.history = [];
+  bot.prices = {};
+  bot.anchors = {};
+  bot.series = {};
   bot.messages = [{ id: uid("m"), from: "service", text: "WIRE is waiting for your bot. Start ABinanceTradingBot.py yourself in Windows CMD. WIRE connects through the bridge files and never launches or edits your script.", ts: Date.now(), tone: "service" }];
   bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
   bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
@@ -169,6 +172,12 @@ const seeded = (() => {
   bot.isaac.orders = [];
   bot.isaac.virtualUsdt = 0;
   bot.isaac.allocated = 0;
+  bot.isaac.initial = 0;
+  bot.isaac.trailingStop = null;
+  bot.isaac.trailingDistance = null;
+  bot.isaac.dipActive = false;
+  bot.isaac.dipLevel = null;
+  bot.isaac.dipDistance = null;
   return [bot];
 })();
 
@@ -393,6 +402,16 @@ export const useDesk = create<DeskState>()(
           source: "bridge" as const,
           inbox: b.inbox ?? [],
           commands: b.commands?.length ? b.commands : [...COMMANDS],
+          wallet: {},
+          history: [],
+          prices: {},
+          anchors: {},
+          series: {},
+          lanes: {
+            USDT: { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null },
+            USDC: { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null },
+          },
+          isaac: { ...b.isaac, symbol: "", orders: [], virtualUsdt: 0, allocated: 0, initial: 0, trailingStop: null, trailingDistance: null, dipActive: false, dipLevel: null, dipDistance: null },
         }));
         const bots = savedBots.length ? [savedBots[0]] : seeded;
         const activeId = saved.activeId && bots.some((b) => b.id === saved.activeId) ? saved.activeId : bots[0].id;
