@@ -16,8 +16,21 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type Message } from "@/lib/wire/engine";
+import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type CommandSpec, type Exchange, type Message } from "@/lib/wire/engine";
 import { useDesk } from "@/lib/wire/store";
+
+function parseCommandLines(raw: string): CommandSpec[] {
+  return raw.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+    const [rawName, ...desc] = line.split("|");
+    const name = rawName.trim();
+    const hint = desc.join("|").trim() || "Custom command";
+    return { name, hint, group: "Session" as const, danger: /sell|reset|emergency|buy|withdraw|delete/i.test(name) };
+  }).filter((command) => /^\/[a-zA-Z0-9_]{1,50}$/.test(command.name));
+}
+
+function commandLines(commands: CommandSpec[] = []) {
+  return commands.map((command) => `${command.name} | ${command.hint}`).join("\n");
+}
 
 function initials(name: string) {
   const parts = name.split(/\s+/).filter(Boolean);
@@ -618,7 +631,7 @@ function Composer({ bot }: { bot: Bot }) {
     return COMMANDS.filter(
       (c) => c.name.startsWith(needle) || c.hint.toLowerCase().includes(needle.slice(1)),
     );
-  }, [draft, filtering, showMenu]);
+  }, [availableCommands, draft, filtering, showMenu]);
 
   useEffect(() => {
     setMenuIndex(0);
@@ -769,12 +782,12 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
         </div>
         <button
           type="button"
-          onClick={() => toggleOnline(bot.id)}
+          onClick={() => { if (bot.source === "bridge") void connectScript(); else toggleOnline(bot.id); }}
           className={`w-full rounded-md px-3 py-2.5 text-sm font-medium ${bot.online ? "bg-elevated text-fg" : "bg-accent-strong text-fg"}`}
         >
-          {bot.source === "bridge" ? (bot.online ? "Recheck script" : "Connect script") : bot.online ? "Stop bot" : "Bring online"}
+          {bot.source === "bridge" ? (bot.online ? "Stop WIRE-launched script" : bot.scriptPath ? "Connect / start script" : "Choose Python script") : bot.online ? "Stop bot" : "Bring online"}
         </button>
-        <LaneBlock title="USDT lane" symbol={usdt.symbol} position={usdt.position} allocated={usdt.allocated} quote={bot.wallet.USDT} />
+        {bot.source === "bridge" && <section className="rounded-md bg-bg p-3 text-sm"><h3 className="font-medium">Local script</h3><p className="mt-1 break-all text-xs text-muted">{bot.scriptPath || "No Python script selected"}</p><p className="mt-2 text-xs text-subtle">A WIRE connection runs the script inside its Python environment. Do not start a second copy of a live trading bot.</p>{connectionError && <p className="mt-2 text-xs text-danger">{connectionError}</p>}</section>}\n        {bot.source === "bridge" && <section className="rounded-md bg-bg p-3 text-sm"><div className="flex items-center justify-between gap-2"><h3 className="font-medium">Bot commands</h3><button type="button" className="text-xs text-accent" onClick={() => { setCommandDraft(commandLines(bot.commands)); setEditingCommands((v) => !v); }}>{editingCommands ? "Cancel" : "Edit commands"}</button></div>{editingCommands ? <><p className="mt-1 text-xs text-muted">One command per line: /command | description. This edits WIRE’s command menu, not the Python handler.</p><textarea value={commandDraft} onChange={(e) => setCommandDraft(e.target.value)} rows={7} className="mt-2 w-full rounded-md bg-sidebar p-2 font-mono text-xs text-fg outline-none" placeholder="/status | Show bot status&#10;/balance | Show wallet balance" /><button type="button" className="mt-2 rounded-md bg-accent-strong px-3 py-2 text-xs font-medium" onClick={() => { updateCommands(bot.id, parseCommandLines(commandDraft)); setEditingCommands(false); }}>Save commands</button></> : <p className="mt-1 text-xs text-muted">{(bot.commands ?? []).length} command entries configured</p>}</section>}\n        <LaneBlock title="USDT lane" symbol={usdt.symbol} position={usdt.position} allocated={usdt.allocated} quote={bot.wallet.USDT} />
         <LaneBlock title="USDC lane" symbol={usdc.symbol} position={usdc.position} allocated={usdc.allocated} quote={bot.wallet.USDC} />
         <section className="rounded-md bg-bg p-3 text-sm">
           <h3 className="font-medium">Isaac DCA</h3>
@@ -856,7 +869,7 @@ function AddBotDialog({ onClose }: { onClose: () => void }) {
         }}
       >
         <h2 className="text-lg font-semibold">Add a bot</h2>
-        <p className="mt-1 text-sm text-muted">Each bot keeps its own pairs, wallet, and Isaac cycle.</p>
+        <p className="mt-1 text-sm text-muted">Add a real local Python script. WIRE will route this chat to that script instead of simulating replies.</p>
         <label className="mt-4 block text-xs font-medium text-muted">
           Name
           <input
@@ -879,7 +892,7 @@ function AddBotDialog({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </label>
-        <div className="mt-5 flex justify-end gap-2">
+        <label className="mt-3 block text-xs font-medium text-muted">\n          Command menu (one per line: /command | description)\n          <textarea value={commands} onChange={(e) => setCommands(e.target.value)} rows={4} placeholder="/status | Show current status\n/balance | Show wallet balance" className="mt-1 w-full rounded-md bg-bg px-3 py-2.5 font-mono text-xs text-fg outline-none" />\n        </label>\n        {error && <p className="mt-2 text-xs text-danger">{error}</p>}\n        <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-sm text-muted">
             Cancel
           </button>
