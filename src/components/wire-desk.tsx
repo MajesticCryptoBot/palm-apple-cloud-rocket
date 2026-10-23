@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   ArrowDown,
+  Bot as BotIcon,
   CheckCheck,
   ChevronDown,
   ChevronLeft,
@@ -11,6 +12,7 @@ import {
   PanelRight,
   Plus,
   Search,
+  Settings,
   Send,
   Volume2,
   VolumeX,
@@ -18,6 +20,7 @@ import {
 } from "lucide-react";
 import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type CommandSpec, type Exchange, type Message } from "@/lib/wire/engine";
 import { useDesk } from "@/lib/wire/store";
+import { WireSettings } from "@/components/wire-settings";
 
 function parseCommandLines(raw: string): CommandSpec[] {
   return raw.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
@@ -108,6 +111,8 @@ export function Desk() {
   const toggleInfo = useDesk((s) => s.toggleInfo);
   const [listMode, setListMode] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [botfatherOpen, setBotfatherOpen] = useState(false);
 
   const active = bots.find((b) => b.id === activeId) ?? null;
 
@@ -148,14 +153,26 @@ export function Desk() {
             <h1 className="text-lg font-semibold tracking-tight">Wire</h1>
             <p className="text-xs text-muted">Private desk</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="grid size-10 place-items-center rounded-full bg-elevated text-accent hover:bg-bubble-out"
-            aria-label="Add a bot"
-          >
-            <Plus className="size-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => { setBotfatherOpen(true); setListMode(false); }}
+              className="grid size-10 place-items-center rounded-full bg-elevated text-accent hover:bg-bubble-out"
+              aria-label="Open BotFather to add a bot"
+              title="BotFather · Add/manage scripts"
+            >
+              <BotIcon className="size-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent"
+              aria-label="Settings"
+              title="Settings"
+            >
+              <Settings className="size-5" />
+            </button>
+          </div>
         </div>
         <div className="px-3 pb-2">
           <label className="flex items-center gap-2 rounded-full bg-bg px-3 py-2 text-sm text-muted">
@@ -169,6 +186,10 @@ export function Desk() {
           </label>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
+          <button type="button" onClick={() => { setBotfatherOpen(true); setListMode(false); }} className={`flex w-full items-center gap-3 border-b border-line px-3 py-3 text-left ${botfatherOpen ? "bg-bubble-out" : "hover:bg-elevated"}`}>
+            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-accent-strong text-fg"><BotIcon className="size-6" /></span>
+            <span className="min-w-0 flex-1"><span className="block font-medium">BotFather</span><span className="block truncate text-sm text-muted">Create bots · manage commands</span></span>
+          </button>
           {shown.length === 0 && <p className="px-4 py-6 text-sm text-muted">No bots match that search.</p>}
           {shown.map((bot) => (
             <ChatRow
@@ -177,6 +198,7 @@ export function Desk() {
               active={bot.id === activeId}
               onPick={() => {
                 setActive(bot.id);
+                setBotfatherOpen(false);
                 setListMode(false);
               }}
             />
@@ -185,7 +207,9 @@ export function Desk() {
       </aside>
 
       <section className={`${listMode ? "hidden" : "flex"} min-h-0 min-w-0 flex-1 flex-col md:flex`}>
-        {active ? (
+        {botfatherOpen ? (
+          <BotFatherChat bots={bots} onBack={() => setListMode(true)} onCreate={() => setAdding(true)} onOpenBot={(id) => { setActive(id); setBotfatherOpen(false); }} />
+        ) : active ? (
           <Thread
             bot={active}
             sound={sound}
@@ -210,7 +234,7 @@ export function Desk() {
         )}
       </section>
 
-      {active && infoOpen && (
+      {active && !botfatherOpen && infoOpen && (
         <>
           <button
             type="button"
@@ -222,8 +246,41 @@ export function Desk() {
         </>
       )}
 
-      {adding && <AddBotDialog onClose={() => setAdding(false)} />}
+      {adding && <BotFatherDialog onClose={() => setAdding(false)} />}
+      {settingsOpen && <WireSettings botId={botfatherOpen ? "" : active?.id ?? ""} onClose={() => setSettingsOpen(false)} />}
     </div>
+  );
+}
+
+function BotFatherChat({ bots, onBack, onCreate, onOpenBot }: { bots: Bot[]; onBack: () => void; onCreate: () => void; onOpenBot: (id: string) => void }) {
+  return (
+    <section className="flex min-h-0 flex-1 flex-col bg-bg">
+      <header className="flex shrink-0 items-center gap-3 border-b border-line bg-sidebar px-4 py-3">
+        <button type="button" onClick={onBack} className="grid size-9 place-items-center rounded-full text-muted hover:bg-elevated md:hidden" aria-label="Back to chats"><ChevronLeft className="size-5" /></button>
+        <span className="grid size-10 place-items-center rounded-full bg-accent-strong"><BotIcon className="size-5" /></span>
+        <div className="min-w-0 flex-1"><h2 className="font-semibold">BotFather</h2><p className="text-xs text-online">WIRE bot manager · local scripts only</p></div>
+      </header>
+      <div className="thread-bg min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
+        <div className="mx-auto flex max-w-2xl flex-col gap-4">
+          <div className="bubble bubble-in has-tail mr-auto max-w-[90%] rounded-xl bg-bubble-in px-4 py-3 text-sm shadow-sm">
+            <p className="font-semibold">Welcome to BotFather</p>
+            <p className="mt-2">I help you register and manage your own local Python scripts in WIRE. No trading bot is bundled with WIRE, and no script is started until you explicitly add it and choose Connect / start.</p>
+            <p className="mt-3 text-muted">Choose an action below. Your script remains on your PC.</p>
+          </div>
+          <div className="ml-auto max-w-[90%] rounded-xl rounded-br-sm bg-bubble-out px-4 py-3 text-sm">
+            <p className="font-medium">Available commands</p>
+            <p className="mt-2 font-mono">/newbot</p><p className="text-xs text-muted">Register a new Python script</p>
+            <p className="mt-3 font-mono">/mybots</p><p className="text-xs text-muted">View scripts already registered in WIRE</p>
+          </div>
+          <div className="bubble bubble-in has-tail mr-auto w-full max-w-[90%] rounded-xl bg-bubble-in px-4 py-4 text-sm">
+            <p className="font-semibold">Your registered bots ({bots.length})</p>
+            {bots.length ? <div className="mt-3 space-y-2">{bots.map((bot) => <button key={bot.id} onClick={() => onOpenBot(bot.id)} className="flex w-full items-center gap-3 rounded-lg bg-bg/70 p-3 text-left hover:bg-elevated"><span className={`size-2.5 rounded-full ${bot.online ? "bg-online" : "bg-subtle"}`} /><span className="min-w-0 flex-1"><span className="block truncate font-medium">{bot.name}</span><span className="block truncate text-xs text-muted">{bot.scriptPath || "No script selected"} · {bot.online ? "connected" : "not running"}</span></span><span className="text-xs text-accent">Open</span></button>)}</div> : <p className="mt-2 text-muted">No bots registered yet. Start with /newbot.</p>}
+            <button onClick={onCreate} className="mt-4 rounded-lg bg-accent-strong px-4 py-2.5 font-medium text-fg">/newbot · Create bot chat</button>
+          </div>
+        </div>
+      </div>
+      <div className="border-t border-line bg-sidebar px-4 py-3 text-xs text-muted">Commands sent here configure WIRE; trading commands are delivered to the selected Python script chat.</div>
+    </section>
   );
 }
 
@@ -277,6 +334,7 @@ function Thread({
   const [hit, setHit] = useState(0);
   const [below, setBelow] = useState(0);
   const [atBottom, setAtBottom] = useState(true);
+  const [wallpaper, setWallpaper] = useState("");
   const quotes = bot.source === "bridge" ? [] : laneQuotes(bot);
   const needle = chatQuery.trim().toLowerCase();
   const hits = useMemo(
@@ -302,6 +360,14 @@ function Thread({
     setAtBottom(near);
     if (near) setBelow(0);
   }
+
+  useEffect(() => {
+    const readWallpaper = () => { try { setWallpaper((JSON.parse(localStorage.getItem("wire-wallpapers") || "{}") as Record<string, string>)[bot.id] || ""); } catch { setWallpaper(""); } };
+    readWallpaper();
+    const onWallpaper = (event: Event) => { const detail = (event as CustomEvent<{ botId: string; dataUrl: string }>).detail; if (detail?.botId === bot.id) setWallpaper(detail.dataUrl || ""); };
+    window.addEventListener("wire-wallpaper-change", onWallpaper);
+    return () => window.removeEventListener("wire-wallpaper-change", onWallpaper);
+  }, [bot.id]);
 
   useEffect(() => {
     seen.current = bot.messages.length;
@@ -413,10 +479,12 @@ function Thread({
         <button
           type="button"
           onClick={onToggleInfo}
-          className="grid size-10 place-items-center rounded-full text-muted hover:bg-elevated"
-          aria-label="Bot details"
+          className="flex h-10 items-center gap-2 rounded-full px-3 text-sm font-medium text-muted hover:bg-elevated hover:text-fg"
+          aria-label="Bot details and script start controls"
+          title="Open Details to connect or start this Python script"
         >
           <PanelRight className="size-5" />
+          <span className="hidden lg:inline">Details / Start</span>
         </button>
       </header>
 
@@ -472,7 +540,7 @@ function Thread({
       )}
 
       <div className="relative min-h-0 flex-1">
-        <div ref={scroller} onScroll={onScroll} className="thread-bg absolute inset-0 overflow-y-auto px-3 py-3 md:px-8">
+        <div ref={scroller} onScroll={onScroll} className="thread-bg absolute inset-0 overflow-y-auto px-3 py-3 md:px-8" style={wallpaper ? { backgroundImage: `linear-gradient(rgba(8,12,18,.38), rgba(8,12,18,.38)), url("${wallpaper}")`, backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "fixed" } : undefined}>
           <div className="mx-auto flex max-w-3xl flex-col">
             {bot.messages.map((m, i) => {
               const prev = bot.messages[i - 1];
@@ -863,7 +931,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   );
 }
 
-function AddBotDialog({ onClose }: { onClose: () => void }) {
+function BotFatherDialog({ onClose }: { onClose: () => void }) {
   const addBot = useDesk((s) => s.addBot);
   const existingBots = useDesk((s) => s.bots);
   const [name, setName] = useState("");
@@ -890,8 +958,8 @@ function AddBotDialog({ onClose }: { onClose: () => void }) {
           onClose();
         }}
       >
-        <h2 className="text-lg font-semibold">Add a bot</h2>
-        <p className="mt-1 text-sm text-muted">Register a real local Python script. Replies and live notifications will come from that script, not a simulator.</p>
+        <h2 className="text-lg font-semibold">BotFather</h2>
+        <p className="mt-1 text-sm text-muted">Your WIRE bot manager. Register any local Python script, then connect it to its own chat. WIRE does not include a trading script or simulated bot.</p>
         <label className="mt-4 block text-xs font-medium text-muted">
           Bot name
           <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="My trading bot" className="mt-1 w-full rounded-md bg-bg px-3 py-2.5 text-sm text-fg outline-none" />
@@ -930,7 +998,7 @@ function AddBotDialog({ onClose }: { onClose: () => void }) {
         {error && <p className="mt-2 text-xs text-danger">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-sm text-muted">Cancel</button>
-          <button type="submit" className="rounded-md bg-accent-strong px-4 py-2 text-sm font-medium text-fg">Add bot</button>
+          <button type="submit" className="rounded-md bg-accent-strong px-4 py-2 text-sm font-medium text-fg">Create bot chat</button>
         </div>
       </form>
     </div>
