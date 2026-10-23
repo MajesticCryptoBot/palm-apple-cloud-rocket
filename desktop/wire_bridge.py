@@ -273,7 +273,12 @@ def run_script(path: str) -> None:
     print(f"Running {script}")
     if not NO_BROWSER:
         launch_browser()
-    runpy.run_path(script, run_name="__main__")
+    bridge_argv = sys.argv
+    sys.argv = [script]
+    try:
+        runpy.run_path(script, run_name="__main__")
+    finally:
+        sys.argv = bridge_argv
 
 
 def selftest() -> None:
