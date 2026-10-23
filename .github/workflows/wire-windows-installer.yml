@@ -13,6 +13,10 @@ on:
       - "package-lock.json"
       - ".github/workflows/wire-windows-installer.yml"
 
+concurrency:
+  group: wire-installer-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
