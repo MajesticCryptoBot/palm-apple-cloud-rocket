@@ -161,13 +161,25 @@ async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => voi
   } finally { polling = false; }
 }
 
-const seeded = seedBots();
+const seeded = (() => {
+  const bot = createBot({ name: "ABinanceTradingBot", exchange: "Binance Testnet", online: false, source: "bridge", commands: [...COMMANDS] });
+  bot.wallet = {};
+  bot.history = [];
+  bot.messages = [{ id: uid("m"), from: "service", text: "WIRE is waiting for your bot. Start ABinanceTradingBot.py yourself in Windows CMD. WIRE connects through the bridge files and never launches or edits your script.", ts: Date.now(), tone: "service" }];
+  bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+  bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+  bot.isaac.symbol = "";
+  bot.isaac.orders = [];
+  bot.isaac.virtualUsdt = 0;
+  bot.isaac.allocated = 0;
+  return [bot];
+})();
 
 export const useDesk = create<DeskState>()(
   persist(
     (set, get) => ({
       bots: seeded,
-      activeId: "",
+      activeId: seeded[0]?.id ?? "",
       sound: true,
       infoOpen: false,
       query: "",
@@ -181,56 +193,10 @@ export const useDesk = create<DeskState>()(
       toggleInfo: () => set((s) => ({ infoOpen: !s.infoOpen })),
       toggleOnline: (id) => {
         const bot = get().bots.find((b) => b.id === id);
-        if (!bot) return;
-        if (isBridge(bot)) {
-          if (bot.scriptPath) {
-            if (bot.online) void window.wire?.stopBot(bot.bridgePort ?? 47832);
-            else void window.wire?.startBot({ scriptPath: bot.scriptPath, port: bot.bridgePort ?? 47832, pythonPath: bot.pythonPath });
-          }
-          bridgeUpByPort.delete(bot.bridgePort ?? 47832);
-          void pollBridge(set, get);
-          return;
-        }
-        const online = !bot.online;
-        set((s) => ({
-          bots: s.bots.map((b) =>
-            b.id === id
-              ? {
-                  ...b,
-                  online,
-                  lastSeen: Date.now(),
-                  typing: false,
-                  messages: online
-                    ? [
-                        ...b.messages,
-                        {
-                          id: uid("m"),
-                          from: "service" as const,
-                          text: "Bot is online.",
-                          ts: Date.now(),
-                          tone: "service" as const,
-                        },
-                      ]
-                    : b.messages,
-                }
-              : b,
-          ),
-        }));
-        if (online) void get().drain(id);
+        if (!bot || !isBridge(bot)) return;
+        bridgeUpByPort.delete(47832);
+        void pollBridge(set, get);
       },
-      addBot: (config) => {
-        const bot = createBot({ ...config, online: false, source: "bridge" });
-        bot.wallet = {};
-        bot.history = [];
-        bot.messages = [{ id: uid("m"), from: "service", text: `Local script configured: ${config.scriptPath}. Start it from this chat’s Details panel.`, ts: Date.now(), tone: "service" }];
-        bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
-        bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
-        bot.isaac.orders = [];
-        bot.isaac.virtualUsdt = 0;
-        bot.isaac.allocated = 0;
-        set((s) => ({ bots: [...s.bots, bot], activeId: bot.id }));
-      },
-      configureBot: (id, config) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, ...config, source: "bridge" } : b) })),
       updateCommands: (id, commands) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, commands } : b) })),
       removeBot: (id) =>
         set((s) => {
@@ -313,37 +279,21 @@ export const useDesk = create<DeskState>()(
               let blocked = false;
               let connected = false;
               let snapshot: ScriptSnapshot | null = null;
-              const ctrl = new AbortController();
-              const timer = setTimeout(() => ctrl.abort(), 20000);
               try {
-                const response = await fetch(`${bridgeUrl(bot)}/command`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  cache: "no-store",
-                  body: JSON.stringify({ text: job.text }),
-                  signal: ctrl.signal,
-                });
-                const data = (await response.json().catch(() => ({}))) as {
-                  replies?: unknown;
-                  error?: string;
-                  blocked?: boolean;
-                };
-                connected = response.ok && !data.blocked;
-                blocked = Boolean(data.blocked) || !response.ok;
-                replies = Array.isArray(data.replies)
-                  ? data.replies.map((v) => String(v))
-                  : [String(data.error || "The script returned no response.")];
-                try {
-                  const snap = await fetch(`${bridgeUrl(bot)}/snapshot`, { cache: "no-store" });
-                  if (snap.ok) snapshot = (await snap.json()) as ScriptSnapshot;
-                } catch {
-                  /* reply still stands */
+                const result = await window.wire?.bridgeCommand(job.text);
+                connected = Boolean(result?.ok);
+                blocked = !connected;
+                replies = connected
+                  ? [String(result?.text || "The running bot returned no message.")]
+                  : [String(result?.error || "The local bot bridge is unavailable. Start the bot manually in CMD.")];
+                const poll = await window.wire?.bridgePoll();
+                if (poll) {
+                  snapshot = poll.snapshot;
+                  connected = poll.connected && connected;
                 }
               } catch {
-                replies = ["REAL SCRIPT NOT CONNECTED. Open this bot’s details and choose Connect / start script. This chat did not simulate the command."];
+                replies = ["REAL BOT NOT CONNECTED. Start your script manually in Windows CMD and ensure its ASP file-bridge task is running. WIRE did not simulate this command."];
                 blocked = true;
-              } finally {
-                clearTimeout(timer);
               }
               const now = Date.now();
               const newMessages: Message[] = replies.map((reply) => {
@@ -356,8 +306,8 @@ export const useDesk = create<DeskState>()(
                   if (b.id !== id) return b;
                   const lanes = snapshot
                     ? {
-                        USDT: { ...b.lanes.USDT, symbol: snapshot.activePair ?? null, lastSymbol: snapshot.activePair ?? b.lanes.USDT.lastSymbol },
-                        USDC: { ...b.lanes.USDC, symbol: snapshot.activePairUSDC ?? null, lastSymbol: snapshot.activePairUSDC ?? b.lanes.USDC.lastSymbol },
+                        USDT: { ...b.lanes.USDT, symbol: snapshot.symbol ?? null, lastSymbol: snapshot.symbol ?? b.lanes.USDT.lastSymbol },
+                        USDC: { ...b.lanes.USDC, symbol: snapshot.symbol2 ?? null, lastSymbol: snapshot.symbol2 ?? b.lanes.USDC.lastSymbol },
                       }
                     : b.lanes;
                   return {
@@ -365,7 +315,7 @@ export const useDesk = create<DeskState>()(
                     online: connected,
                     lastSeen: now,
                     lanes,
-                    isaac: snapshot?.isaacPair ? { ...b.isaac, symbol: snapshot.isaacPair } : b.isaac,
+                    isaac: snapshot ? { ...b.isaac, symbol: snapshot.symbol ?? b.isaac.symbol, allocated: Number(snapshot.isaac_allocated ?? b.isaac.allocated) } : b.isaac,
                     messages: [...b.messages.map((m) => (m.id === job.id ? { ...m, pending: false } : m)), ...newMessages].slice(-500),
                     inbox: b.inbox.filter((j) => j.id !== job.id),
                     typing: false,
@@ -435,13 +385,20 @@ export const useDesk = create<DeskState>()(
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<DeskState>;
         if (!saved.bots?.length) return { ...current, ...saved };
-        const bots = saved.bots.filter((b) => b.source === "bridge" && b.name !== "ABinanceTradingBot (local)").map((b) => ({
+        const savedBots = (saved.bots ?? []).filter((b) => b.source === "bridge").map((b) => ({
           ...b,
+          name: "ABinanceTradingBot",
+          exchange: "Binance Testnet" as Exchange,
+          scriptPath: undefined,
+          pythonPath: undefined,
+          bridgePort: undefined,
           typing: false,
           source: "bridge" as const,
           inbox: b.inbox ?? [],
+          commands: b.commands?.length ? b.commands : [...COMMANDS],
         }));
-        const activeId = saved.activeId && bots.some((b) => b.id === saved.activeId) ? saved.activeId : (bots[0]?.id ?? "");
+        const bots = savedBots.length ? [savedBots[0]] : seeded;
+        const activeId = saved.activeId && bots.some((b) => b.id === saved.activeId) ? saved.activeId : bots[0].id;
         return { ...current, ...saved, bots, activeId, query: "" };
       },
       partialize: (s) => ({
