@@ -9,6 +9,8 @@ import {
   Copy,
   Menu,
   PanelRight,
+  Plus,
+  RotateCw,
   Search,
   Settings,
   Send,
@@ -17,7 +19,8 @@ import {
   X,
 } from "lucide-react";
 import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type CommandSpec, type Message } from "@/lib/wire/engine";
-import { BRIDGE_DIRECTORY, useDesk } from "@/lib/wire/store";
+import { BOT_PROFILES, useDesk } from "@/lib/wire/store";
+import { AddBotDialog } from "@/components/wire-add-bot";
 import { WireSettings } from "@/components/wire-settings";
 
 function parseCommandLines(raw: string): CommandSpec[] {
@@ -107,8 +110,10 @@ export function Desk() {
   const setActive = useDesk((s) => s.setActive);
   const toggleSound = useDesk((s) => s.toggleSound);
   const toggleInfo = useDesk((s) => s.toggleInfo);
+  const addBot = useDesk((s) => s.addBot);
   const [listMode, setListMode] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [addBotOpen, setAddBotOpen] = useState(false);
   const active = bots.find((b) => b.id === activeId) ?? bots[0] ?? null;
 
   useEffect(() => {
@@ -126,8 +131,11 @@ export function Desk() {
     <div className="flex h-dvh min-h-0 overflow-hidden bg-bg text-fg">
       <aside className={`${listMode ? "flex" : "hidden"} min-h-0 w-full shrink-0 flex-col border-r border-line bg-sidebar md:flex md:w-80`}>
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <div><h1 className="text-lg font-semibold tracking-tight">WIRE</h1><p className="text-xs text-muted">Local bot control</p></div>
-          <button type="button" onClick={() => setSettingsOpen(true)} className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent" aria-label="Settings" title="Settings"><Settings className="size-5" /></button>
+          <div><h1 className="text-lg font-semibold tracking-tight">WIRE</h1><p className="text-xs text-muted">Private messenger</p></div>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => setAddBotOpen(true)} className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent" aria-label="Add bot" title="Add bot"><Plus className="size-5" /></button>
+            <button type="button" onClick={() => setSettingsOpen(true)} className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent" aria-label="Settings" title="Settings"><Settings className="size-5" /></button>
+          </div>
         </div>
         <div className="px-3 pb-2">
           <label className="flex items-center gap-2 rounded-full bg-bg px-3 py-2 text-sm text-muted">
@@ -138,17 +146,17 @@ export function Desk() {
         <div className="min-h-0 flex-1 overflow-y-auto">
           {shown.map((bot) => <ChatRow key={bot.id} bot={bot} active={bot.id === active?.id} onPick={() => { setActive(bot.id); setListMode(false); }} />)}
         </div>
-        <div className="border-t border-line px-4 py-3 text-xs leading-relaxed text-muted">Start your Python bot yourself in Windows CMD. WIRE connects to its existing ASP bridge files and never launches or modifies the script.</div>
       </aside>
       <section className={`${listMode ? "hidden" : "flex"} min-h-0 min-w-0 flex-1 flex-col md:flex`}>
         {active ? <Thread bot={active} sound={sound} onBack={() => setListMode(true)} onToggleSound={toggleSound} onToggleInfo={toggleInfo} /> : (
-          <div className="grid flex-1 place-items-center px-6 text-center"><div><p className="text-lg font-medium">No bot chat available</p><p className="mt-1 text-sm text-muted">WIRE will connect when the configured bridge publishes its first status snapshot.</p></div></div>
+          <div className="grid flex-1 place-items-center px-6 text-center"><div><p className="text-lg font-medium">Your chats</p><p className="mt-1 text-sm text-muted">Choose a bot from the sidebar.</p></div></div>
         )}
       </section>
       {active && infoOpen && <>
         <button type="button" className="fixed inset-0 z-20 bg-bg/70 xl:hidden" aria-label="Close details" onClick={toggleInfo} />
         <InfoPanel bot={active} onClose={toggleInfo} />
       </>}
+      {addBotOpen && <AddBotDialog existing={bots.map((b) => b.bridgeDirectory ?? "")} onPick={(profile) => { addBot(profile); setAddBotOpen(false); setListMode(false); }} onClose={() => setAddBotOpen(false)} />}
       {settingsOpen && <WireSettings botId={active?.id ?? ""} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
@@ -350,11 +358,11 @@ function Thread({
           type="button"
           onClick={onToggleInfo}
           className="flex h-10 items-center gap-2 rounded-full px-3 text-sm font-medium text-muted hover:bg-elevated hover:text-fg"
-          aria-label="Bot details and script start controls"
-          title="Open Details to connect or start this Python script"
+          aria-label="Bot details"
+          title="Bot details"
         >
           <PanelRight className="size-5" />
-          <span className="hidden lg:inline">Details / Start</span>
+          <span className="hidden lg:inline">Details</span>
         </button>
       </header>
 
@@ -426,6 +434,7 @@ function Thread({
                     </div>
                   )}
                   <Bubble
+                    onRepeat={m.from === "me" && m.text.trim().startsWith("/") ? () => useDesk.getState().send(m.text) : undefined}
                     message={m}
                     query={needle}
                     grouped={same(prev, m)}
@@ -471,12 +480,14 @@ function Thread({
 
 function Bubble({
   message,
+  onRepeat,
   query,
   grouped,
   tail,
   current,
 }: {
   message: Message;
+  onRepeat?: () => void;
   query: string;
   grouped: boolean;
   tail: boolean;
@@ -509,6 +520,11 @@ function Bubble({
           {hm(message.ts)}
           {mine && !message.pending && <CheckCheck className="size-3.5 text-accent" aria-label="Read" />}
         </span>
+        {onRepeat && (
+          <button type="button" onClick={onRepeat} className="absolute -top-2 right-10 rounded-full bg-sidebar px-2 py-1 text-xs text-accent opacity-0 shadow ring-1 ring-line group-hover:opacity-100" aria-label="Run this command again" title="Run this command again">
+            <RotateCw className="size-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -715,12 +731,10 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
       <div className="flex items-center justify-between px-4 py-3"><h2 className="font-semibold">Bot details</h2><button type="button" onClick={onClose} className="grid size-10 place-items-center rounded-full hover:bg-elevated" aria-label="Close details"><X className="size-5" /></button></div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-6">
         <div className="flex items-center gap-3"><Avatar name={bot.name} online={bot.online} /><div><div className="font-medium">{bot.name}</div><div className={`text-sm ${bot.online ? "text-online" : "text-muted"}`}>{bot.online ? "Bridge connected" : "Waiting for running bot"}</div></div></div>
-        <section className="rounded-md bg-bg p-3 text-sm"><h3 className="font-medium">Connection</h3><p className="mt-2 text-xs leading-relaxed text-muted">Start ABinanceTradingBot.py yourself in Windows CMD. WIRE does not launch, stop, or edit the script. The integrated ASP bridge must be active in the running process.</p><p className="mt-2 break-all font-mono text-xs text-muted">{BRIDGE_DIRECTORY}</p></section>
         <section className="rounded-md bg-bg p-3 text-sm">
           <div className="flex items-center justify-between gap-2"><h3 className="font-medium">Command menu</h3><button type="button" className="text-xs text-accent" onClick={() => { setCommandDraft(commandLines(bot.commands)); setEditingCommands((v) => !v); }}>{editingCommands ? "Cancel" : "Edit commands"}</button></div>
-          {editingCommands ? <><p className="mt-1 text-xs text-muted">One command per line: /command | description. This edits only WIRE's menu. The running bot bridge must support the command.</p><textarea value={commandDraft} onChange={(e) => setCommandDraft(e.target.value)} rows={10} className="mt-2 w-full rounded-md bg-sidebar p-2 font-mono text-xs text-fg outline-none" /><button type="button" className="mt-2 rounded-md bg-accent-strong px-3 py-2 text-xs font-medium" onClick={() => { updateCommands(bot.id, parseCommandLines(commandDraft)); setEditingCommands(false); }}>Save commands</button></> : <p className="mt-1 text-xs text-muted">{(bot.commands ?? []).length} commands configured. No script upload or registration is used.</p>}
+          {editingCommands ? <><p className="mt-1 text-xs text-muted">One command per line: /command | description.</p><textarea value={commandDraft} onChange={(e) => setCommandDraft(e.target.value)} rows={10} className="mt-2 w-full rounded-md bg-sidebar p-2 font-mono text-xs text-fg outline-none" /><button type="button" className="mt-2 rounded-md bg-accent-strong px-3 py-2 text-xs font-medium" onClick={() => { updateCommands(bot.id, parseCommandLines(commandDraft)); setEditingCommands(false); }}>Save commands</button></> : <p className="mt-1 text-xs text-muted">{(bot.commands ?? []).length} commands</p>}
         </section>
-        <p className="text-xs leading-relaxed text-subtle">Type / in the chat to filter commands. Enter sends a command to the running bot. Live trading messages are read from the bridge feed.</p>
       </div>
     </aside>
   );
