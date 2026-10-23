@@ -9,6 +9,7 @@ import {
   tickBot,
   uid,
   type Bot,
+  type CommandSpec,
   type Exchange,
   type Message,
   type Reply,
@@ -27,7 +28,9 @@ type DeskState = {
   toggleInfo: () => void;
   send: (text: string) => void;
   toggleOnline: (id: string) => void;
-  addBot: (config: { name: string; exchange: Exchange; scriptPath: string; bridgePort: number; commands: import("@/lib/wire/engine").CommandSpec[] }) => void;
+  addBot: (config: { name: string; exchange: Exchange; scriptPath: string; bridgePort: number; commands: CommandSpec[] }) => void;
+  configureBot: (id: string, config: { scriptPath?: string; bridgePort?: number }) => void;
+  updateCommands: (id: string, commands: CommandSpec[]) => void;
   removeBot: (id: string) => void;
   tickAll: () => void;
   drain: (id: string) => Promise<void>;
@@ -232,6 +235,8 @@ export const useDesk = create<DeskState>()(
         bot.isaac.allocated = 0;
         set((s) => ({ bots: [...s.bots, bot], activeId: bot.id }));
       },
+      configureBot: (id, config) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, ...config, source: "bridge" } : b) })),
+      updateCommands: (id, commands) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, commands } : b) })),
       removeBot: (id) =>
         set((s) => {
           const bots = s.bots.filter((b) => b.id !== id);
