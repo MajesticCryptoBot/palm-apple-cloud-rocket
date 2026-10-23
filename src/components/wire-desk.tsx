@@ -357,6 +357,8 @@ function Thread({
           <div className={`truncate text-xs ${bot.online ? "text-accent" : "text-muted"}`}>
             {bot.typing ? (
               <span>typing</span>
+            ) : bot.source === "bridge" ? (
+              bot.online ? "live script" : "script offline"
             ) : bot.online ? (
               "bot"
             ) : (
@@ -770,7 +772,7 @@ function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
           onClick={() => toggleOnline(bot.id)}
           className={`w-full rounded-md px-3 py-2.5 text-sm font-medium ${bot.online ? "bg-elevated text-fg" : "bg-accent-strong text-fg"}`}
         >
-          {bot.online ? "Stop bot" : "Bring online"}
+          {bot.source === "bridge" ? (bot.online ? "Recheck script" : "Connect script") : bot.online ? "Stop bot" : "Bring online"}
         </button>
         <LaneBlock title="USDT lane" symbol={usdt.symbol} position={usdt.position} allocated={usdt.allocated} quote={bot.wallet.USDT} />
         <LaneBlock title="USDC lane" symbol={usdc.symbol} position={usdc.position} allocated={usdc.allocated} quote={bot.wallet.USDC} />

@@ -159,6 +159,7 @@ export type Bot = {
   inbox: InboxJob[];
   typing: boolean;
   entryCooldownUntil: number;
+  source: "engine" | "bridge";
 };
 
 export type Reply = { text: string; tone: Tone; mono?: boolean };
@@ -1421,6 +1422,7 @@ export function createBot(input: {
   exchange: Exchange;
   online?: boolean;
   now?: number;
+  source?: "engine" | "bridge";
 }): Bot {
   const now = input.now ?? Date.now();
   const bot: Bot = {
@@ -1458,6 +1460,7 @@ export function createBot(input: {
     inbox: [],
     typing: false,
     entryCooldownUntil: now + 25_000,
+    source: input.source ?? "engine",
   };
   for (const base of BASES) ensureBase(bot, base);
   bot.messages.push(
@@ -1468,6 +1471,33 @@ export function createBot(input: {
       { tone: "service" },
     ),
   );
+  return bot;
+}
+
+export function makeLocalBot(now = Date.now()): Bot {
+  const bot = createBot({
+    name: "ABinanceTradingBot (local)",
+    exchange: "Binance",
+    online: false,
+    now,
+    source: "bridge",
+  });
+  bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+  bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+  bot.isaac.orders = [];
+  bot.isaac.virtualUsdt = 0;
+  bot.isaac.allocated = 0;
+  bot.wallet = {};
+  bot.history = [];
+  bot.messages = [
+    {
+      id: uid("m"),
+      from: "service",
+      text: "Real script chat. On this PC run desktop\\Wire.bat, then start the bot through it. Patterns, fills, trailing stops, and rescues appear here as they happen. This chat does not simulate trades.",
+      ts: now,
+      tone: "service",
+    },
+  ];
   return bot;
 }
 
@@ -1574,7 +1604,7 @@ export function seedBots(now = Date.now()): Bot[] {
   bitget.lastSeen = now - 35 * 60_000;
   bitget.messages.push(msg("service", "Bitget Spot is offline. Messages you send stay queued.", now - 35 * 60_000, { tone: "service" }));
 
-  return [testnet, live, bybit, bitget];
+  return [makeLocalBot(now), testnet, live, bybit, bitget];
 }
 
 export function previewLine(bot: Bot): string {
