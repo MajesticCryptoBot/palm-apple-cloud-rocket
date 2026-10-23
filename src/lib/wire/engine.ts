@@ -160,6 +160,9 @@ export type Bot = {
   typing: boolean;
   entryCooldownUntil: number;
   source: "engine" | "bridge";
+  bridgePort?: number;
+  scriptPath?: string;
+  commands?: CommandSpec[];
 };
 
 export type Reply = { text: string; tone: Tone; mono?: boolean };
@@ -1423,6 +1426,9 @@ export function createBot(input: {
   online?: boolean;
   now?: number;
   source?: "engine" | "bridge";
+  bridgePort?: number;
+  scriptPath?: string;
+  commands?: CommandSpec[];
 }): Bot {
   const now = input.now ?? Date.now();
   const bot: Bot = {
@@ -1461,6 +1467,9 @@ export function createBot(input: {
     typing: false,
     entryCooldownUntil: now + 25_000,
     source: input.source ?? "engine",
+    bridgePort: input.bridgePort,
+    scriptPath: input.scriptPath,
+    commands: input.commands ?? [...COMMANDS],
   };
   for (const base of BASES) ensureBase(bot, base);
   bot.messages.push(
@@ -1481,6 +1490,8 @@ export function makeLocalBot(now = Date.now()): Bot {
     online: false,
     now,
     source: "bridge",
+    bridgePort: 47832,
+    commands: [...COMMANDS],
   });
   bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
   bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
@@ -1502,128 +1513,5 @@ export function makeLocalBot(now = Date.now()): Bot {
 }
 
 export function seedBots(now = Date.now()): Bot[] {
-  const testnet = createBot({ name: "ABinance Testnet", exchange: "Binance Testnet", now: now - 3 * 3600_000 });
-  testnet.lanes.USDT.symbol = "ETH/USDT";
-  testnet.lanes.USDT.lastSymbol = "ETH/USDT";
-  testnet.lanes.USDT.allocated = 6840;
-  testnet.prices.ETH = 3266;
-  testnet.anchors.ETH = 3210;
-  ensureBase(testnet, "ETH", 3210);
-  testnet.series.ETH.push(3266);
-  const ethPos = makePosition(3210, 1.42, "EMA Momentum Alignment (Elite)");
-  ethPos.trailingDistance = 3266 * 0.048;
-  ethPos.trailingStop = 3266 - ethPos.trailingDistance;
-  ethPos.phase = 0;
-  testnet.lanes.USDT.position = ethPos;
-  testnet.wallet.ETH = { free: 1.42, locked: 0 };
-  testnet.wallet.USDT = { free: 18420.55, locked: 80 };
-  testnet.wallet.USDC = { free: 9100, locked: 0 };
-  testnet.wallet.NEAR = { free: 1297.48, locked: 0 };
-  testnet.isaac.orders = [
-    { entry: 5.05, size: 990.1 },
-    { entry: 4.88, size: 307.38 },
-  ];
-  testnet.isaac.virtualUsdt = 36500 - 6500;
-  testnet.isaac.cooldownUntil = now + 20_000;
-  testnet.prices.NEAR = 4.82;
-  testnet.history = [
-    { ts: now - 26 * 3600_000, type: "main_profit", amount: 214.4, invested: 3100, profitPct: 6.92, lane: "USDT" },
-    { ts: now - 9 * 3600_000, type: "isaac_profit", amount: 162.15, invested: 4200, profitPct: 3.86, orderInfo: "Orders: 3", lane: "ISAAC" },
-    { ts: now - 5 * 3600_000, type: "main_profit", amount: 88.2, invested: 2500, profitPct: 3.53, lane: "USDT" },
-  ];
-  const t0 = now - 140 * 60_000;
-  testnet.messages = [
-    msg("service", "ABinance Testnet connected. Lanes USDT and USDC. Isaac on NEAR/USDT.", t0, { tone: "service" }),
-    msg("me", "/pair", t0 + 20_000),
-    msg("bot", "Enter trading pair (e.g., BTC/USDT)", t0 + 21_000),
-    msg("me", "ETH/USDT", t0 + 40_000),
-    msg("bot", "ETH/USDT pair added", t0 + 41_000),
-    msg("me", "/buy_price ETH/USDT 3210 1.42", t0 + 80_000),
-    msg(
-      "bot",
-      `Position initialized for ETH/USDT: 1.42000000 ETH at entry price $3210.00\nPrimary $${pxFmt(ethPos.primary)}, Secondary $${pxFmt(ethPos.secondary)}, Stop-Loss $${pxFmt(ethPos.stopLoss)}, Trailing Stop $${pxFmt(ethPos.trailingStop)}`,
-      t0 + 82_000,
-      { tone: "trade", mono: true },
-    ),
-    msg("me", "/price", now - 6 * 60_000),
-    msg("bot", "ETH/USDT: $3266.00", now - 6 * 60_000 + 800),
-  ];
-  testnet.entryCooldownUntil = now + 12_000;
-
-  const live = createBot({ name: "ABinance Live", exchange: "Binance", now: now - 2 * 3600_000 });
-  live.lanes.USDT.symbol = "BTC/USDT";
-  live.lanes.USDT.lastSymbol = "BTC/USDT";
-  live.lanes.USDT.allocated = 5000;
-  live.wallet.USDT = { free: 24210, locked: 0 };
-  live.wallet.USDC = { free: 4000, locked: 0 };
-  live.isaac.cooldownUntil = now + 90_000;
-  live.messages = [
-    msg("service", "ABinance Live is online. No position yet. BTC/USDT is the active pair.", now - 2 * 3600_000, {
-      tone: "service",
-    }),
-    msg("me", "/pair BTC/USDT", now - 2 * 3600_000 + 4000),
-    msg("bot", "BTC/USDT pair added", now - 2 * 3600_000 + 5000),
-  ];
-
-  const bybit = createBot({ name: "Bybit Spot", exchange: "Bybit", now: now - 50 * 60_000 });
-  bybit.lanes.USDT.symbol = "SOL/USDT";
-  bybit.lanes.USDT.lastSymbol = "SOL/USDT";
-  bybit.lanes.USDT.allocated = 5420;
-  bybit.prices.SOL = 151.4;
-  const sol = makePosition(146.2, 18.4, "VWAP Reclaim Orderflow Flip");
-  sol.phase = 1;
-  sol.trailingDistance = 151.4 * 0.008;
-  sol.trailingStop = 151.4 - sol.trailingDistance;
-  bybit.lanes.USDT.position = sol;
-  bybit.wallet.SOL = { free: 18.4, locked: 0 };
-  bybit.wallet.USDT = { free: 8600, locked: 0 };
-  bybit.messages = [
-    msg("service", "Bybit Spot online. SOL/USDT is in BREATHE.", now - 40 * 60_000, { tone: "service" }),
-    msg(
-      "bot",
-      fmtTg("BREATHE  +3.56%", [
-        "Pair          SOL/USDT",
-        "Unrealized    +3.56%",
-        "Trail         0.80%",
-        `Stop          ${pxFmt(sol.trailingStop)}`,
-        "Locked        ≈ +2.70%",
-        "Pattern       VWAP Reclaim Orderflow Flip",
-        "Goal          Profit locked. Distance is SACRED.",
-      ]),
-      now - 4 * 60_000,
-      { tone: "trade", mono: true },
-    ),
-  ];
-  bybit.unread = 1;
-
-  const bitget = createBot({ name: "Bitget Spot", exchange: "Bitget", online: false, now: now - 8 * 3600_000 });
-  bitget.lanes.USDT.symbol = "XRP/USDT";
-  bitget.lanes.USDT.lastSymbol = "XRP/USDT";
-  bitget.wallet.USDT = { free: 6300, locked: 0 };
-  bitget.wallet.XRP = { free: 1200, locked: 0 };
-  bitget.lastSeen = now - 35 * 60_000;
-  bitget.messages.push(msg("service", "Bitget Spot is offline. Messages you send stay queued.", now - 35 * 60_000, { tone: "service" }));
-
-  return [makeLocalBot(now), testnet, live, bybit, bitget];
-}
-
-export function previewLine(bot: Bot): string {
-  if (bot.typing) return "typing...";
-  const last = [...bot.messages].reverse().find((m) => m.from !== "service") ?? bot.messages[bot.messages.length - 1];
-  if (!last) return bot.online ? "online" : "offline";
-  const who = last.from === "me" ? "You: " : "";
-  return (who + last.text).replace(/\s+/g, " ").slice(0, 86);
-}
-
-export function laneQuotes(bot: Bot): { pair: string; price: number; pnl: number | null }[] {
-  const out: { pair: string; price: number; pnl: number | null }[] = [];
-  for (const lane of ["USDT", "USDC"] as Lane[]) {
-    const st = bot.lanes[lane];
-    if (!st.symbol) continue;
-    const price = priceOf(bot, st.symbol);
-    if (!price) continue;
-    const pnl = st.position ? ((price - st.position.entry) / st.position.entry) * 100 : null;
-    out.push({ pair: st.symbol, price, pnl });
-  }
-  return out;
+  return [makeLocalBot(now)];
 }
