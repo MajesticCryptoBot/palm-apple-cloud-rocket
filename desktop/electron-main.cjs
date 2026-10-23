@@ -136,18 +136,39 @@ function registerIpc() {
   });
 }
 
+function probeLocalApp() {
+  return new Promise((resolve) => {
+    const req = http.get({ hostname: "127.0.0.1", port: APP_PORT, path: "/", timeout: 800 }, (res) => {
+      res.resume();
+      resolve(Boolean(res.statusCode && res.statusCode < 500));
+    });
+    req.on("timeout", () => { req.destroy(); resolve(false); });
+    req.on("error", () => resolve(false));
+  });
+}
+
+async function waitForLocalApp() {
+  const deadline = Date.now() + 25000;
+  while (Date.now() < deadline) {
+    if (await probeLocalApp()) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("The WIRE local server did not become ready. Restart the app and try again.");
+}
+
 function startLocalServer() {
   const entry = appFile(".output", "server", "index.mjs");
   if (!fs.existsSync(entry)) throw new Error("WIRE local web server is missing from the installation.");
   serverProcess = fork(entry, [], {
     execPath: process.execPath,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", HOST: "127.0.0.1", PORT: String(APP_PORT), NODE_ENV: "production" },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", HOST: "127.0.0.1", NITRO_HOST: "127.0.0.1", PORT: String(APP_PORT), NITRO_PORT: String(APP_PORT), NODE_ENV: "production" },
     stdio: "ignore",
     detached: false,
   });
 }
 
 async function createWindow() {
+  await waitForLocalApp();
   const win = new BrowserWindow({
     width: 1320,
     height: 860,
