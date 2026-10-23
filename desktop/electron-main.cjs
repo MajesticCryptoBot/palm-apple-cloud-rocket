@@ -9,6 +9,14 @@ const APP_PORT = 47831;
 const runningBots = new Map();
 let serverProcess;
 
+function registryPath() { return path.join(app.getPath("userData"), "wire-processes.json"); }
+function readRegistry() {
+  try { return JSON.parse(fs.readFileSync(registryPath(), "utf8")); } catch { return {}; }
+}
+function writeRegistry(registry) {
+  try { fs.mkdirSync(path.dirname(registryPath()), { recursive: true }); fs.writeFileSync(registryPath(), JSON.stringify(registry, null, 2), "utf8"); } catch (error) { console.error("Could not persist WIRE process registry:", error); }
+}
+
 function appFile(...parts) {
   if (app.isPackaged) {
     if (parts[0] === "bridge") return path.join(process.resourcesPath, ...parts);
@@ -96,20 +104,31 @@ function registerIpc() {
     });
     child.unref();
     runningBots.set(port, child);
-    child.on("exit", () => { if (runningBots.get(port) === child) runningBots.delete(port); });
+    const registry = readRegistry();
+    registry[String(port)] = child.pid;
+    writeRegistry(registry);
+    child.on("exit", () => {
+      if (runningBots.get(port) === child) runningBots.delete(port);
+      const current = readRegistry();
+      if (Number(current[String(port)]) === child.pid) { delete current[String(port)]; writeRegistry(current); }
+    });
     child.on("error", (error) => { console.error("WIRE bot launch failed:", error.message); });
     return { ok: true, starting: true };
   });
   ipcMain.handle("wire:stop-bot", async (_event, rawPort) => {
     const port = Number(rawPort);
     const child = runningBots.get(port);
-    if (!child?.pid) return { ok: false, error: "This WIRE session did not start the process, so it will not terminate an unknown trading process." };
+    const registry = readRegistry();
+    const pid = child?.pid || Number(registry[String(port)]);
+    if (!pid) return { ok: false, error: "WIRE has no saved process ID for this bridge, so it will not terminate an unknown trading process." };
     if (process.platform === "win32") {
-      await new Promise((resolve) => execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"], () => resolve(null)));
+      await new Promise((resolve) => execFile("taskkill", ["/PID", String(pid), "/T", "/F"], () => resolve(null)));
     } else {
-      try { process.kill(-child.pid, "SIGTERM"); } catch { try { child.kill("SIGTERM"); } catch {} }
+      try { process.kill(-pid, "SIGTERM"); } catch { try { process.kill(pid, "SIGTERM"); } catch {} }
     }
     runningBots.delete(port);
+    delete registry[String(port)];
+    writeRegistry(registry);
     return { ok: true };
   });
 }
