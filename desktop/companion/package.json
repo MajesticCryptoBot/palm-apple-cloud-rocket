@@ -1,0 +1,17 @@
+{
+  "name": "wire-companion-relay",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WIRE Companion relay v2 \u2014 live stream + remote control between the WIRE desktop app and the iPhone web app.",
+  "main": "server.mjs",
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

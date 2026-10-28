@@ -141,6 +141,17 @@ export function WireSettings({ botId, onClose }: Props) {
             </label>
             <p className="mt-2 text-xs text-muted">Windows pop-ups depend on Windows notification permissions for WIRE.</p>
           </section>
+          <section className="border-t border-line pt-5">
+            <h3 className="font-medium">Companion sync</h3>
+            <p className="mt-1 text-sm text-muted">Paste the Render relay URL and the same pairing key on this PC and on your iPhone. The companion files stay with WIRE.</p>
+            <label className="mt-3 block text-sm">Relay URL
+              <input defaultValue={typeof localStorage !== "undefined" ? localStorage.getItem("wire-companion-url") || "" : ""} onBlur={(e) => { localStorage.setItem("wire-companion-url", e.target.value.trim()); window.dispatchEvent(new Event("wire-companion")); }} className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-fg outline-none" placeholder="https://your-relay.onrender.com" />
+            </label>
+            <label className="mt-3 block text-sm">Pairing key
+              <input defaultValue={typeof localStorage !== "undefined" ? localStorage.getItem("wire-companion-key") || "" : ""} onBlur={(e) => { localStorage.setItem("wire-companion-key", e.target.value.trim()); window.dispatchEvent(new Event("wire-companion")); }} className="mt-1 w-full rounded-lg border border-line bg-bg px-3 py-2 text-fg outline-none" />
+            </label>
+            <button type="button" className="mt-3 rounded-lg bg-elevated px-4 py-2 text-sm" onClick={() => { const on = localStorage.getItem("wire-companion-on") === "1"; localStorage.setItem("wire-companion-on", on ? "0" : "1"); window.dispatchEvent(new Event("wire-companion")); setStatus(on ? "Companion paused." : "Companion sync on."); }}>Toggle companion sync</button>
+          </section>
           {status && <p role="status" className="rounded-lg bg-elevated px-3 py-2 text-sm text-muted">{status}</p>}
         </div>
         <footer className="flex justify-end border-t border-line px-5 py-3"><button onClick={onClose} className="rounded-lg bg-accent-strong px-4 py-2 text-sm font-medium">Done</button></footer>

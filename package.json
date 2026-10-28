@@ -112,7 +112,12 @@
       ".output/**/*",
       "package.json"
     ],
-    "extraResources": [],
+    "extraResources": [
+      {
+        "from": "desktop/companion",
+        "to": "companion"
+      }
+    ],
     "win": {
       "target": [
         {
@@ -132,7 +137,7 @@
       "createStartMenuShortcut": true
     }
   },
-  "version": "1.0.5",
+  "version": "1.0.10",
   "description": "Private local desktop chat for controlling an already-running Python bot through its file bridge",
   "author": "MajesticCryptoBot"
 }

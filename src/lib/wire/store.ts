@@ -14,6 +14,7 @@ import {
   type Reply,
   type Tone,
 } from "@/lib/wire/engine";
+import { applyMother, isMother, makeMother, MOTHER_ID } from "@/lib/wire/mother";
 
 type DeskState = {
   bots: Bot[];
@@ -25,9 +26,12 @@ type DeskState = {
   setActive: (id: string) => void;
   toggleSound: () => void;
   toggleInfo: () => void;
-  send: (text: string) => void;
+  send: (text: string, botId?: string) => void;
   toggleOnline: (id: string) => void;
   updateCommands: (id: string, commands: CommandSpec[]) => void;
+  setPhoto: (id: string, photo: string) => void;
+  togglePin: (id: string, messageId: string) => void;
+  clearChat: (id: string) => void;
   removeBot: (id: string) => void;
   addBot: (profile: BotProfile) => void;
   tickAll: () => void;
@@ -180,7 +184,7 @@ const seeded = (() => {
   bot.isaac.dipActive = false;
   bot.isaac.dipLevel = null;
   bot.isaac.dipDistance = null;
-  return [bot];
+  return [makeMother(), bot];
 })();
 
 export const useDesk = create<DeskState>()(
@@ -205,6 +209,18 @@ export const useDesk = create<DeskState>()(
         void pollBridge(set, get);
       },
       updateCommands: (id, commands) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, commands } : b) })),
+      setPhoto: (id, photo) => set((s) => ({ bots: s.bots.map((b) => (b.id === id ? { ...b, photo: photo || undefined } : b)) })),
+      togglePin: (id, messageId) => set((s) => ({
+        bots: s.bots.map((b) => {
+          if (b.id !== id) return b;
+          const pins = b.pins ?? [];
+          const next = pins.includes(messageId) ? pins.filter((pin) => pin !== messageId) : [...pins, messageId].slice(-20);
+          return { ...b, pins: next };
+        }),
+      })),
+      clearChat: (id) => set((s) => ({
+        bots: s.bots.map((b) => b.id === id ? { ...b, pins: [], messages: [{ id: uid("m"), from: "service" as const, text: "Chat history cleared.", ts: Date.now(), tone: "service" as const }] } : b),
+      })),
       addBot: (profile) => set((s) => {
         const existing = s.bots.find((b) => b.bridgeDirectory === profile.directory);
         if (existing) return { activeId: existing.id, infoOpen: false };
@@ -220,16 +236,52 @@ export const useDesk = create<DeskState>()(
       }),
       removeBot: (id) =>
         set((s) => {
+          if (id === MOTHER_ID) return s;
           const bots = s.bots.filter((b) => b.id !== id);
-          const activeId = s.activeId === id ? (bots[0]?.id ?? "") : s.activeId;
+          const activeId = s.activeId === id ? (bots.find((b) => !isMother(b))?.id ?? bots[0]?.id ?? "") : s.activeId;
           return { bots, activeId };
         }),
-      send: (text) => {
+      send: (text, botId) => {
         const trimmed = text.trim();
         if (!trimmed) return;
-        const id = get().activeId;
+        const id = botId || get().activeId;
         const bot = get().bots.find((b) => b.id === id);
         if (!bot) return;
+        if (isMother(bot)) {
+          void applyMother(get().bots, trimmed).then((result) => {
+            const still = get().bots.some((b) => b.id === get().activeId);
+            set({ bots: result.bots, activeId: still ? get().activeId : result.bots[0]?.id ?? "" });
+          });
+          return;
+        }
+        if (bot.kind === "channel" || bot.source === "channel") {
+          const post: Message = { id: uid("m"), from: "bot", text: trimmed, ts: Date.now() };
+          set((s) => ({ bots: s.bots.map((b) => (b.id === id ? { ...b, messages: [...b.messages, post].slice(-500), unread: 0 } : b)) }));
+          return;
+        }
+        if (bot.kind === "custom" || bot.kind === "forwarder" || bot.source === "custom") {
+          const now = Date.now();
+          const mine: Message = { id: uid("m"), from: "me", text: trimmed, ts: now };
+          const known = (bot.commands ?? []).some((c) => trimmed === c.name || trimmed.startsWith(c.name + " "));
+          const replyText = trimmed.startsWith("/")
+            ? known
+              ? `${trimmed.split(/\s+/)[0]} received.`
+              : "Unknown command. Open Menu to see this bot's commands."
+            : bot.kind === "forwarder"
+              ? "Forwarded."
+              : "Saved.";
+          const reply: Message = { id: uid("m"), from: "bot", text: replyText, ts: now + 1 };
+          set((s) => ({
+            bots: s.bots.map((b) => {
+              if (b.id === id) return { ...b, messages: [...b.messages, mine, reply].slice(-500), unread: 0 };
+              if (bot.kind === "forwarder" && b.id === bot.linkedChannelId && !trimmed.startsWith("/")) {
+                return { ...b, messages: [...b.messages, { id: uid("m"), from: "bot" as const, text: `${bot.name}\n${trimmed}`, ts: now }].slice(-500) };
+              }
+              return b;
+            }),
+          }));
+          return;
+        }
         const jobId = uid("j");
         const mine: Message = {
           id: jobId,
@@ -255,7 +307,7 @@ export const useDesk = create<DeskState>()(
         let played = false;
         set((s) => ({
           bots: s.bots.map((b) => {
-            if (isBridge(b) || !b.online || b.typing || b.inbox.length) return b;
+            if (b.source !== "engine" || !b.online || b.typing || b.inbox.length) return b;
             const { bot, replies } = tickBot(b, Date.now());
             if (!replies.length) return { ...bot, messages: b.messages, inbox: b.inbox, typing: false, unread: b.unread };
             const pushed = pushReplies(b.messages, replies, Date.now());
@@ -394,12 +446,12 @@ export const useDesk = create<DeskState>()(
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<DeskState>;
         if (!saved.bots?.length) return { ...current, ...saved, bots: seeded, activeId: seeded[0].id, query: "" };
-        const savedBots = saved.bots.filter((b) => b.source === "bridge").map((b) => ({
+        const savedBots = saved.bots.filter((b) => isMother(b) || b.source === "bridge" || b.source === "custom" || b.source === "channel").map((b) => (b.source === "custom" || b.source === "channel") ? { ...b, typing: false, inbox: [], online: true, pins: b.pins ?? [], messages: (b.messages ?? []).slice(-500) } : isMother(b) ? { ...makeMother(b.messages?.[0]?.ts), ...b, id: MOTHER_ID, source: "system" as const, online: true, typing: false, inbox: [], commands: b.commands?.length ? b.commands : makeMother().commands, pins: b.pins ?? [] } : ({
           ...b, scriptPath: undefined, pythonPath: undefined, bridgePort: undefined,
           typing: false, online: false, unread: 0, source: "bridge" as const,
           bridgeDirectory: b.bridgeDirectory || (b.name === "ABinanceTradingBot" ? "ABINANCE TESTNET" : undefined),
           messages: (b.messages ?? []).filter((m) => m.from !== "service").slice(-500),
-          inbox: [], conversation: null,
+          inbox: [], conversation: null, pins: b.pins ?? [],
           commands: b.commands?.length ? b.commands : [...COMMANDS],
           wallet: {}, history: [], prices: {}, anchors: {}, series: {},
           lanes: {

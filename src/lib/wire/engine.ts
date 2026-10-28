@@ -1,5 +1,5 @@
 export type Lane = "USDT" | "USDC";
-export type Exchange = "Binance Testnet" | "Binance" | "Bybit" | "Bitget";
+export type Exchange = "Binance Testnet" | "Binance" | "Bybit" | "Bitget" | "Wire";
 export type Tone = "normal" | "trade" | "alert" | "service";
 
 export type CommandSpec = {
@@ -158,12 +158,22 @@ export type Bot = {
   inbox: InboxJob[];
   typing: boolean;
   entryCooldownUntil: number;
-  source: "engine" | "bridge";
+  source: "engine" | "bridge" | "system" | "custom" | "channel";
+  kind?: "trading" | "custom" | "forwarder" | "channel" | "mother";
+  about?: string;
+  description?: string;
+  linkedChannelId?: string;
+  token?: string;
   bridgeDirectory?: string;
   bridgePort?: number;
   scriptPath?: string;
   pythonPath?: string;
   commands?: CommandSpec[];
+  photo?: string;
+  pins?: string[];
+  motherStep?: string | null;
+  motherTarget?: string;
+  motherDraft?: string;
 };
 
 export type Reply = { text: string; tone: Tone; mono?: boolean };
@@ -1426,7 +1436,7 @@ export function createBot(input: {
   exchange: Exchange;
   online?: boolean;
   now?: number;
-  source?: "engine" | "bridge";
+  source?: "engine" | "bridge" | "system" | "custom" | "channel";
   bridgePort?: number;
   scriptPath?: string;
   pythonPath?: string;

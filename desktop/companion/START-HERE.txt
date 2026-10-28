@@ -1,0 +1,245 @@
+=====================================================================
+  WIRE COMPANION — iPHONE SETUP, EXPLAINED LIKE YOU HAVE NEVER
+  DONE ANYTHING LIKE THIS BEFORE. EVERY CLICK. NOTHING SKIPPED.
+=====================================================================
+
+WHAT YOU ARE BUILDING (30-second version)
+-----------------------------------------
+Your bots live on your PC. Your iPhone is far away. We put a tiny
+free "relay" (a messenger server) on the internet. The PC talks to
+it, the iPhone talks to it, and your chats + commands flow through.
+
+  PC (WIRE 1.0.9)  --->  free relay on Render.com  <---  iPhone (Safari)
+
+Cost: $0. Time: about 10 minutes, once. After that it just works.
+
+
+YOU NEED BEFORE STARTING
+------------------------
+1. Your PC with WIRE 1.0.9 installed and running.
+2. The folder "wire-companion-relay" (it sits next to this file).
+3. A free GitHub.com account (you may already have one — you own a
+   GitHub repository, so yes, you do).
+4. Your iPhone 7 (or any iPhone), connected to Wi-Fi or mobile data.
+
+
+=====================================================================
+PART A — PUT THE RELAY ONLINE (one time, ~7 minutes)
+=====================================================================
+
+STEP A1. Unzip (if you have not already)
+----------------------------------------
+You received WIRE-Companion-Relay-Package.zip. Right-click it ->
+"Extract All..." -> Extract. You now have a folder called
+"wire-companion-relay". Remember where it is (e.g. your Desktop).
+
+NOTE: You do NOT run anything from this folder. It only gets
+uploaded to GitHub in the next steps.
+
+
+STEP A2. Create a private GitHub repository (2 minutes)
+-------------------------------------------------------
+2.1  Open your browser (Chrome/Edge/Firefox) and go to:
+     https://github.com/new
+     (Make sure you are logged in — your username is
+     MajesticCryptoBot.)
+
+2.2  Fill the form exactly like this:
+
+     Repository name:  wire-companion-relay
+
+     Description (optional): WIRE Companion relay server
+
+     Select:  Private   <-- IMPORTANT, pick Private
+
+     Leave EVERY checkbox UNCHECKED (no README, no .gitignore,
+     no license). The repo must be empty.
+
+2.3  Click the green button:  "Create repository"
+
+2.4  GitHub now shows a page with a big code area and lines like
+     "…or create a new repository on the command line". Ignore all
+     of that. Scroll down and find the link:
+     "uploading an existing file"
+     Click that link.
+
+STEP A3. Upload the relay folder (2 minutes)
+--------------------------------------------
+3.1  You are now on an upload page. You see a drag-and-drop area
+     that says "Drag files here to add them to your repository".
+
+3.2  Open File Explorer. Go INTO the "wire-companion-relay" folder
+     (the folder itself, so you can SEE its files: server.mjs,
+     package.json, render.yaml, README.md, START-HERE.txt and the
+     "public" folder).
+
+3.3  Select ALL files and folders INSIDE it (Ctrl+A) and DRAG them
+     onto the GitHub drop area. Wait until every file appears in
+     the list. You should see about 16 items including "server.mjs"
+     and the "public" folder.
+
+     IMPORTANT: upload the CONTENTS of the folder, not the folder
+     itself. GitHub must show server.mjs directly at the top level
+     of the repo.
+
+3.4  Scroll down. Click the big green button: "Commit changes".
+
+3.5  Done. Your relay code is now on GitHub (private, only you).
+
+STEP A4. Deploy it on Render.com (3 minutes)
+--------------------------------------------
+4.1  Open a new browser tab and go to:  https://dashboard.render.com
+
+4.2  Click "Sign in with GitHub" (or "Get Started" first, then
+     "Sign in with GitHub"). A GitHub page opens asking to
+     authorize Render -> click "Authorize Render".
+
+4.3  You are now on your Render Dashboard. Click the blue button
+     "New +" (top right) and choose  "Web Service"  from the menu.
+
+4.4  If Render asks for GitHub access, click
+     "Configure account" -> "All repositories" -> Install.
+     (Or select only your new wire-companion-relay repo.)
+
+4.5  You see a list "Git Provider" repositories. Find
+     wire-companion-relay and click its "Connect" button.
+
+4.6  The settings page appears. Fill it in like this:
+
+     Name:                wire-companion-relay
+                          (Render may propose something similar —
+                          anything is fine, remember it)
+
+     Language:            leave as detected (Node)
+     Branch:              main
+     Region:              Frankfurt (EU Central)   [or closest to you]
+     Instance Type:       Free
+
+     Leave EVERYTHING else exactly as it is. Render reads the
+     start command from package.json automatically ("npm start").
+
+4.7  Scroll to the bottom and click "Deploy Web Service".
+
+4.8  A log screen appears with live lines of text. Wait 2-4
+     minutes. You are waiting for a line like:
+         ==> Your service is live 🎉
+
+4.9  At the TOP of the page you can see your service URL — it looks
+     like:
+         https://wire-companion-relay.onrender.com
+     Click the little copy icon next to it, or select it and copy
+     it (Ctrl+C).
+
+     THIS IS YOUR RELAY URL. You will paste it into WIRE on the PC
+     in Part B. (If your service name was different, the URL is
+     different — that is fine, use YOURS.)
+
+THAT IS IT FOR THE INTERNET SIDE. You never have to do Part A
+again — it stays online. (Note: on the Free plan the relay sleeps
+after 15 minutes with nobody connected. The moment your PC's WIRE
+app connects, it wakes up — the first connection may take up to a
+minute. Keeping WIRE's Companion sync enabled keeps it awake.)
+
+
+=====================================================================
+PART B — CONNECT WIRE ON YOUR PC (2 minutes)
+=====================================================================
+
+STEP B1. Open WIRE on your PC.
+
+STEP B2. Click the gear icon "Settings" (top-right of the WIRE
+         window, next to the + button).
+
+STEP B3. Scroll down to the section:  "Companion sync · iPhone live view"
+
+STEP B4. In "Relay URL" paste the URL you copied in step A4.9.
+         Example:  https://wire-companion-relay.onrender.com
+
+STEP B5. Click the "Test" button. Within a few seconds you should
+         see:  "Relay reachable — ready to pair."
+         (If it fails, wait 30 seconds — a sleeping relay wakes on
+         the first request — then click Test again.)
+
+STEP B6. Click "Generate". A key appears, like:
+             WIRE-7K3M-QX92
+         This key is the "password" that links your PC and your
+         phone. Keep it private.
+
+STEP B7. Turn ON the switch "Enable Companion sync".
+         The little status dot turns green and says:
+             "Live · waiting for a device"
+
+STEP B8. Click "Copy iPhone link". This copies a ready-made link
+         that already contains your key, e.g.:
+             https://wire-companion-relay.onrender.com/?key=WIRE-7K3M-QX92
+
+STEP B9. Send this link to yourself so the iPhone can open it:
+         - Easiest: paste it into a Telegram/WhatsApp "Saved
+           Messages" chat, or
+         - Email it to yourself, or
+         - Type it manually in Part C step 2 (it is long — the
+           copy/paste way is easier).
+
+
+=====================================================================
+PART C — SET UP THE iPHONE (2 minutes)
+=====================================================================
+
+STEP C1. Unlock your iPhone and open this chat/email/note where you
+         pasted the link from step B9.
+
+STEP C2. TAP the link. Safari opens. If it asks, tap "Open".
+         The WIRE Companion screen appears and — within a few
+         seconds — you see your chat list (BotMother and all your
+         bots) with a green "Live" pill at the top.
+
+         No link? Open Safari manually and type your relay URL,
+         then enter the key from step B6 on the pairing screen and
+         tap Connect.
+
+STEP C3. Make it a real app (one time):
+         1. Tap the SHARE button — the square with an arrow
+            pointing up, in Safari's bottom toolbar.
+         2. Scroll down the menu a little and tap
+            "Add to Home Screen".
+         3. Tap "Add" (top right).
+         A white/blue W icon now sits on your Home Screen like a
+         normal app. Open it from there from now on — full screen,
+         no Safari bars.
+
+STEP C4. Done! Tap any chat to open it. You can:
+         - read everything live,
+         - type commands in the message box and send them — the PC
+           runs them exactly as if you typed at the desk,
+         - tap the "Menu" button next to the message box for the
+           bot's command list,
+         - tap any /command chip inside a chat to run it again,
+         - tap BotMother's blue buttons to add or manage bots,
+         - long-press a message for: Pin / Unpin, Copy, Run again,
+         - tap the gear for themes and settings.
+
+TROUBLESHOOTING
+---------------
+"Connecting…" forever on the phone
+  -> The relay is waking up from sleep. Wait up to 60 seconds.
+  -> Check that PC shows "Live · ..." in Settings.
+"Pairing key rejected"
+  -> The key on the phone differs from the PC. Generate a NEW key
+     on the PC (Settings -> Generate), copy the iPhone link again,
+     open it on the phone.
+"Relay reachable" fails on the PC
+  -> Check the URL for typos, wait 60 s (relay waking), re-Test.
+Phone works at home but not outside
+  -> It works anywhere with internet — the relay is on the
+     internet. Check the phone's own connection.
+Bot offline in the chat
+  -> The bot's Python script is not running on the PC. Start it.
+     WIRE shows it online automatically.
+
+REMEMBER
+--------
+- Bots always run on your PC. Closing the PC or quitting WIRE means
+  the phone shows the last known state until you are back.
+- Everything is end-to-end yours: your repo, your relay, your key.
+- To move to a new PC: install WIRE, open Settings -> Companion
+  sync, paste the SAME relay URL and key. Done.

@@ -1,0 +1,13 @@
+# Render.com one-click deployment for the WIRE Companion relay.
+# Free tier: 512 MB, spins down after 15 min without traffic — the WIRE desktop
+# app keeps it awake with its live WebSocket connection.
+services:
+  - type: web
+    name: wire-companion-relay
+    runtime: node
+    plan: free
+    region: frankfurt            # closest free region to most EU/US users
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true

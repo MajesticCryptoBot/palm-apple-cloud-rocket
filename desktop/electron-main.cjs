@@ -25,7 +25,7 @@ let quitting = false;
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function bridgeDir(raw) {
   const name = path.basename(String(raw || DEFAULT_BRIDGE).replace(/[\\/]+$/, ""));
-  if (!ALLOWED_BRIDGES.has(name)) throw new Error("This bot folder is not configured in WIRE.");
+  if (!/^[\w .()-]{1,80}$/.test(name) || name === "." || name === "..") throw new Error("This bot folder name is not allowed.");
   return path.join(DESKTOP, name);
 }
 function bridgeFiles(raw) {
