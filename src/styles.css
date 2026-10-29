@@ -250,3 +250,74 @@ input:focus, textarea:focus, select:focus {
     transition: none;
   }
 }
+
+
+/* WIRE premium palette and comfortable long-form trading output. */
+:root {
+  --wire-glow: rgba(86, 153, 255, 0.16);
+  --wire-glass: rgba(255, 255, 255, 0.045);
+  --wire-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+}
+body {
+  font-family: "Segoe UI Variable", "Segoe UI", Inter, Roboto, system-ui, sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.008em;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+.bg-sidebar {
+  background-color: color-mix(in srgb, var(--color-sidebar) 96%, #6b91c9 4%);
+  background-image: linear-gradient(155deg, rgba(255,255,255,.045), transparent 44%);
+}
+.bg-elevated {
+  background-image: linear-gradient(140deg, rgba(255,255,255,.065), rgba(255,255,255,.012));
+  border: 1px solid rgba(255,255,255,.035);
+}
+.bg-bubble-in {
+  background-color: color-mix(in srgb, var(--color-bubble-in) 95%, #7aa9d8 5%);
+  background-image: linear-gradient(145deg, rgba(255,255,255,.055), transparent 75%);
+}
+.bg-bubble-out {
+  background-color: color-mix(in srgb, var(--color-bubble-out) 91%, #75b8ff 9%);
+  background-image: linear-gradient(140deg, rgba(132,199,255,.17), rgba(43,77,133,.06) 68%, rgba(255,255,255,.025));
+}
+.bubble {
+  position: relative;
+  border-radius: 15px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  contain: layout style;
+}
+.bubble-in { border-color: rgba(141, 189, 237, .10); }
+.bubble-out {
+  border-color: color-mix(in srgb, var(--color-accent) 28%, transparent);
+  box-shadow: 0 7px 24px rgba(12, 42, 78, .20), inset 0 1px 0 rgba(255,255,255,.075);
+}
+.tone-trade {
+  background-image: linear-gradient(135deg, rgba(46, 190, 139, .13), transparent 70%);
+  box-shadow: inset 3px 0 0 #42d7a0, 0 5px 22px rgba(0,0,0,.13);
+}
+.tone-alert {
+  background-image: linear-gradient(135deg, rgba(255, 173, 82, .13), transparent 70%);
+  box-shadow: inset 3px 0 0 #ffb45e, 0 5px 22px rgba(0,0,0,.13);
+}
+.thread-bg {
+  background-image:
+    radial-gradient(ellipse at 12% 0%, var(--wire-glow), transparent 43%),
+    radial-gradient(ellipse at 90% 85%, rgba(66, 198, 177, .045), transparent 40%),
+    radial-gradient(circle at 20% 20%, rgba(255,255,255,.028) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 70% 60%, rgba(255,255,255,.022) 0 1px, transparent 1.5px);
+  background-size: auto, auto, 28px 28px, 36px 36px;
+}
+.bubble-col { line-height: 1.58; font-size: 0.91rem; }
+.bubble-col.font-mono {
+  font-size: 0.82rem;
+  line-height: 1.62;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.thread-scroll {
+  overflow-anchor: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: auto;
+}

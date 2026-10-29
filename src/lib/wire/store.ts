@@ -4,7 +4,6 @@ import {
   applyUserText,
   createBot,
   pushReplies,
-  seedBots,
   tickBot,
   uid,
   type Bot,
@@ -15,6 +14,7 @@ import {
   type Reply,
   type Tone,
 } from "@/lib/wire/engine";
+import { applyMother, isMother, makeMother, MOTHER_COMMANDS, MOTHER_ID } from "@/lib/wire/mother";
 
 type DeskState = {
   bots: Bot[];
@@ -26,12 +26,18 @@ type DeskState = {
   setActive: (id: string) => void;
   toggleSound: () => void;
   toggleInfo: () => void;
-  send: (text: string) => void;
+  send: (text: string, botId?: string, extra?: { image?: string; fileName?: string }) => void;
+  deleteMessage: (chatId: string, messageId: string) => void;
+  createChannel: (input: { name: string; description: string; photo?: string }) => void;
+  setAdmins: (channelId: string, adminIds: string[]) => void;
+  updateChannel: (id: string, patch: { name?: string; description?: string; link?: string }) => void;
   toggleOnline: (id: string) => void;
-  addBot: (config: { name: string; exchange: Exchange; scriptPath: string; pythonPath?: string; bridgePort: number; commands: CommandSpec[] }) => void;
-  configureBot: (id: string, config: { scriptPath?: string; pythonPath?: string; bridgePort?: number }) => void;
   updateCommands: (id: string, commands: CommandSpec[]) => void;
+  setPhoto: (id: string, photo: string) => void;
+  togglePin: (id: string, messageId: string) => void;
+  clearChat: (id: string) => void;
   removeBot: (id: string) => void;
+  addBot: (profile: BotProfile) => void;
   tickAll: () => void;
   drain: (id: string) => Promise<void>;
 };
@@ -74,21 +80,27 @@ function soundFor(replies: Reply[], active: boolean, sound: boolean) {
   else if (!active && replies.some((r) => r.tone === "normal")) playTone(false);
 }
 
-type ScriptSnapshot = { activePair?: string | null; activePairUSDC?: string | null; isaacPair?: string | null };
+type ScriptSnapshot = { symbol?: string | null; symbol2?: string | null; main_usdt?: number; main_usdc?: number; rescue_usdt?: number; rescue_usdc?: number; isaac_allocated?: number; ts?: string };
 
-export const BRIDGE_URL = "http://127.0.0.1:47832";
-export function bridgeUrl(bot: Bot): string { return `http://127.0.0.1:${bot.bridgePort ?? 47832}`; }
+export const BOT_PROFILES = [
+  { name: "ABinanceTradingBot", exchange: "Binance Testnet" as Exchange, directory: "ABINANCE TESTNET" },
+  { name: "Binance Live Bot", exchange: "Binance" as Exchange, directory: "BINANCE LIVE" },
+  { name: "Bitget Live Bot", exchange: "Bitget" as Exchange, directory: "Bitget Live Bot" },
+  { name: "Bybit Live Bot", exchange: "Bybit" as Exchange, directory: "Bybit Live Bot" },
+  { name: "GROK TESTNET", exchange: "Binance Testnet" as Exchange, directory: "GROK TESTNET" },
+  { name: "ZZZBinance METRICS LIVE", exchange: "Binance" as Exchange, directory: "ZZZBinance METRICS LIVE" },
+] as const;
+export type BotProfile = (typeof BOT_PROFILES)[number];
+export const BRIDGE_DIRECTORY = ["C:", "Users", "pauld", "Desktop", "ABINANCE TESTNET"].join("\\");
 
 declare global {
   interface Window {
     wire?: {
-      selectScript: () => Promise<string | null>;
-      selectPython: () => Promise<string | null>;
       selectWallpaper: () => Promise<string | null>;
       showNotification: (payload: { title: string; body: string; silent?: boolean }) => Promise<{ ok: boolean }>;
-      openBotLog: (port: number) => Promise<{ ok: boolean; error?: string }>;
-      startBot: (config: { scriptPath: string; port: number; pythonPath?: string }) => Promise<{ ok: boolean; error?: string }>;
-      stopBot: (port: number) => Promise<{ ok: boolean; error?: string }>;
+      bridgePoll: (directory?: string) => Promise<{ connected: boolean; error?: string; snapshot: ScriptSnapshot | null; items: { id: string; text: string; ts?: number }[]; posts?: { id: string; text: string; ts?: number; image?: string }[]; bridgeDirectory: string }>;
+      bridgeCommand: (command: string, directory?: string) => Promise<{ ok: boolean; error?: string; text?: string; ts?: string }>;
+      ensureFeed?: (directory: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
     };
   }
 }
@@ -104,98 +116,115 @@ function toneFor(text: string): { tone: Tone; mono: boolean } {
   return { tone: alert ? "alert" : trade ? "trade" : "normal", mono: text.includes("\n") || text.startsWith("Spot Wallet") };
 }
 
-const liveSeqByPort = new Map<number, number>();
-const bridgeUpByPort = new Map<number, boolean>();
 let polling = false;
 
 async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => void, get: () => DeskState) {
-  if (polling) return;
+  if (polling || !window.wire?.bridgePoll) return;
   const targets = get().bots.filter(isBridge);
-  if (!targets.length) return;
+  const channels = get().bots.filter((b) => b.kind === "channel" && (b.admins ?? []).length);
+  if (!targets.length && !channels.length) return;
   polling = true;
   try {
-    const results = await Promise.all(targets.map(async (bot) => {
-      const port = bot.bridgePort ?? 47832;
-      let reachable = false;
-      let connected = false;
-      let items: { text: string; ts?: number }[] = [];
-      let snapshot: ScriptSnapshot | null = null;
-      try {
-        const health = await fetch(`http://127.0.0.1:${port}/health`, { cache: "no-store" });
-        if (health.ok) {
-          reachable = true;
-          connected = Boolean(((await health.json()) as { connected?: boolean }).connected);
-          const after = liveSeqByPort.get(port) ?? 0;
-          const live = await fetch(`http://127.0.0.1:${port}/live?after=${after}`, { cache: "no-store" });
-          if (live.ok) {
-            const data = (await live.json()) as { latest?: number; items?: { text: string; ts?: number }[] };
-            if (typeof data.latest === "number") liveSeqByPort.set(port, data.latest);
-            items = Array.isArray(data.items) ? data.items : [];
+    for (const target of targets) {
+      const polled = await window.wire.bridgePoll(target.bridgeDirectory).catch(() => null);
+      if (!polled) continue;
+      const now = Date.now();
+      const active = get().activeId === target.id;
+      const snapshot = polled.snapshot;
+      const extra: Message[] = [];
+      const replies: Reply[] = [];
+      for (const item of polled.items ?? []) {
+        const text = String(item.text || "");
+        if (!text) continue;
+        const look = toneFor(text);
+        extra.push({ id: uid("m"), from: "bot", text, ts: typeof item.ts === "number" && Number.isFinite(item.ts) ? item.ts : now, tone: look.tone, mono: look.mono });
+        replies.push({ text, tone: look.tone, mono: look.mono });
+      }
+      set((state) => ({
+        bots: state.bots.map((bot) => {
+          if (bot.id !== target.id) return bot;
+          const liveState = snapshot ? {
+            lanes: {
+              USDT: { ...bot.lanes.USDT, symbol: snapshot.symbol ?? null, lastSymbol: snapshot.symbol ?? bot.lanes.USDT.lastSymbol, allocated: Number(snapshot.main_usdt ?? bot.lanes.USDT.allocated), rescuePool: Number(snapshot.rescue_usdt ?? bot.lanes.USDT.rescuePool) },
+              USDC: { ...bot.lanes.USDC, symbol: snapshot.symbol2 ?? null, lastSymbol: snapshot.symbol2 ?? bot.lanes.USDC.lastSymbol, allocated: Number(snapshot.main_usdc ?? bot.lanes.USDC.allocated), rescuePool: Number(snapshot.rescue_usdc ?? bot.lanes.USDC.rescuePool) },
+            },
+            isaac: { ...bot.isaac, allocated: Number(snapshot.isaac_allocated ?? bot.isaac.allocated) },
+          } : {};
+          return {
+            ...bot, ...liveState, online: polled.connected,
+            lastSeen: polled.connected ? now : bot.lastSeen,
+            messages: extra.length ? [...bot.messages.filter((m) => m.from !== "service"), ...extra].slice(-500) : bot.messages.filter((m) => m.from !== "service"),
+            unread: active ? 0 : bot.unread + extra.length,
+          };
+        }),
+      }));
+      soundFor(replies, active, get().sound);
+      const notificationStyle = (() => { try { return localStorage.getItem("wire-notification-style") || "system-and-chat"; } catch { return "system-and-chat"; } })();
+      if (notificationStyle === "system-and-chat" || notificationStyle === "system-only") {
+        for (const reply of replies.slice(-3)) {
+          void window.wire?.showNotification({ title: target.name, body: reply.text.replace(/\s+/g, " ").slice(0, 240), silent: notificationStyle === "system-only" });
+        }
+      }
+    }
+    const channels = get().bots.filter((b) => b.kind === "channel");
+    const notify = (() => { try { return localStorage.getItem("wire-notification-style") || "system-and-chat"; } catch { return "system-and-chat"; } })();
+    for (const channel of channels) {
+      const publishers = get().bots.filter((b) => (channel.admins ?? []).includes(b.id) && b.bridgeDirectory);
+      for (const publisher of publishers) {
+        const polled = await window.wire.bridgePoll(publisher.bridgeDirectory).catch(() => null);
+        const posts = polled?.posts ?? [];
+        if (!posts.length) continue;
+        const now = Date.now();
+        const active = get().activeId === channel.id;
+        const extra: Message[] = posts.map((item) => ({
+          id: uid("m"),
+          from: "bot" as const,
+          text: String(item.text || ""),
+          image: item.image,
+          ts: typeof item.ts === "number" && Number.isFinite(item.ts) ? item.ts : now,
+        })).filter((item) => item.text || item.image);
+        set((state) => ({
+          bots: state.bots.map((bot) => bot.id === channel.id ? { ...bot, messages: [...bot.messages, ...extra].slice(-500), unread: active ? 0 : bot.unread + extra.length } : bot),
+        }));
+        if (notify === "system-and-chat" || notify === "system-only") {
+          for (const post of extra.slice(-3)) {
+            void window.wire?.showNotification({ title: channel.name, body: (post.text || "New post").replace(/\s+/g, " ").slice(0, 240), silent: !get().sound });
           }
-          if (connected) {
-            try {
-              const snap = await fetch(`http://127.0.0.1:${port}/snapshot`, { cache: "no-store" });
-              if (snap.ok) snapshot = (await snap.json()) as ScriptSnapshot;
-            } catch { /* live notifications still work */ }
-          }
         }
-      } catch { reachable = false; }
-      const previous = bridgeUpByPort.get(port);
-      bridgeUpByPort.set(port, connected);
-      return { id: bot.id, port, reachable, connected, changed: previous !== undefined && previous !== connected, items, snapshot };
-    }));
-    const now = Date.now();
-    const activeId = get().activeId;
-    const sound = get().sound;
-    const allReplies: Reply[] = [];
-    const byId = new Map(results.map((r) => [r.id, r]));
-    set((s) => ({
-      bots: s.bots.map((bot) => {
-        if (!isBridge(bot)) return bot;
-        const result = byId.get(bot.id);
-        if (!result) return bot;
-        const extra: Message[] = [];
-        if (result.changed) {
-          extra.push({ id: uid("m"), from: "service", text: result.connected
-            ? "Live script connected. Commands now go to this local script."
-            : result.reachable ? "WIRE bridge is running, but this script is not attached." : "Local script bridge disconnected.", ts: now, tone: "service" });
-        }
-        for (const item of result.items) {
-          const text = String(item.text || "");
-          if (!text) continue;
-          const look = toneFor(text);
-          extra.push({ id: uid("m"), from: "bot", text, ts: item.ts ? Math.round(Number(item.ts) * 1000) : now, tone: look.tone, mono: look.mono });
-          allReplies.push({ text, tone: look.tone, mono: look.mono });
-        }
-        const liveState = result.snapshot ? {
-          lanes: {
-            USDT: { ...bot.lanes.USDT, symbol: result.snapshot.activePair ?? null, lastSymbol: result.snapshot.activePair ?? bot.lanes.USDT.lastSymbol },
-            USDC: { ...bot.lanes.USDC, symbol: result.snapshot.activePairUSDC ?? null, lastSymbol: result.snapshot.activePairUSDC ?? bot.lanes.USDC.lastSymbol },
-          },
-          isaac: { ...bot.isaac, symbol: result.snapshot.isaacPair ?? "" },
-        } : {};
-        if (!extra.length) return { ...bot, ...liveState, online: result.connected, lastSeen: result.connected ? now : bot.lastSeen };
-        const active = bot.id === activeId;
-        return { ...bot, ...liveState, online: result.connected, lastSeen: now, messages: [...bot.messages, ...extra].slice(-500), unread: active ? 0 : bot.unread + extra.filter((m) => m.from === "bot").length };
-      }),
-    }));
-    soundFor(allReplies, targets.some((b) => b.id === activeId), sound);
-    const notificationStyle = (() => { try { return localStorage.getItem("wire-notification-style") || "system-and-chat"; } catch { return "system-and-chat"; } })();
-    if (notificationStyle === "system-and-chat" || notificationStyle === "system-only") {
-      for (const reply of allReplies.slice(-3)) {
-        void window.wire?.showNotification({ title: "WIRE · Trading notification", body: reply.text.replace(/\\s+/g, " ").slice(0, 240), silent: notificationStyle === "system-only" });
       }
     }
   } finally { polling = false; }
 }
 
-const seeded = seedBots();
+const seeded = (() => {
+  const bot = createBot({ name: "ABinanceTradingBot", exchange: "Binance Testnet", online: false, source: "bridge", commands: [...COMMANDS] });
+  bot.bridgeDirectory = "ABINANCE TESTNET";
+  bot.wallet = {};
+  bot.history = [];
+  bot.prices = {};
+  bot.anchors = {};
+  bot.series = {};
+  bot.messages = [];
+  bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+  bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
+  bot.isaac.symbol = "";
+  bot.isaac.orders = [];
+  bot.isaac.virtualUsdt = 0;
+  bot.isaac.allocated = 0;
+  bot.isaac.initial = 0;
+  bot.isaac.trailingStop = null;
+  bot.isaac.trailingDistance = null;
+  bot.isaac.dipActive = false;
+  bot.isaac.dipLevel = null;
+  bot.isaac.dipDistance = null;
+  return [makeMother(), bot];
+})();
 
 export const useDesk = create<DeskState>()(
   persist(
     (set, get) => ({
       bots: seeded,
-      activeId: "",
+      activeId: seeded[0]?.id ?? "",
       sound: true,
       infoOpen: false,
       query: "",
@@ -209,69 +238,113 @@ export const useDesk = create<DeskState>()(
       toggleInfo: () => set((s) => ({ infoOpen: !s.infoOpen })),
       toggleOnline: (id) => {
         const bot = get().bots.find((b) => b.id === id);
-        if (!bot) return;
-        if (isBridge(bot)) {
-          if (bot.scriptPath) {
-            if (bot.online) void window.wire?.stopBot(bot.bridgePort ?? 47832);
-            else void window.wire?.startBot({ scriptPath: bot.scriptPath, port: bot.bridgePort ?? 47832, pythonPath: bot.pythonPath });
-          }
-          bridgeUpByPort.delete(bot.bridgePort ?? 47832);
-          void pollBridge(set, get);
-          return;
-        }
-        const online = !bot.online;
-        set((s) => ({
-          bots: s.bots.map((b) =>
-            b.id === id
-              ? {
-                  ...b,
-                  online,
-                  lastSeen: Date.now(),
-                  typing: false,
-                  messages: online
-                    ? [
-                        ...b.messages,
-                        {
-                          id: uid("m"),
-                          from: "service" as const,
-                          text: "Bot is online.",
-                          ts: Date.now(),
-                          tone: "service" as const,
-                        },
-                      ]
-                    : b.messages,
-                }
-              : b,
-          ),
-        }));
-        if (online) void get().drain(id);
+        if (!bot || !isBridge(bot)) return;
+        void pollBridge(set, get);
       },
-      addBot: (config) => {
-        const bot = createBot({ ...config, online: false, source: "bridge" });
-        bot.wallet = {};
-        bot.history = [];
-        bot.messages = [{ id: uid("m"), from: "service", text: `Local script configured: ${config.scriptPath}. Start it from this chat’s Details panel.`, ts: Date.now(), tone: "service" }];
+      updateCommands: (id, commands) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, commands } : b) })),
+      setPhoto: (id, photo) => set((s) => ({ bots: s.bots.map((b) => (b.id === id ? { ...b, photo: photo || undefined } : b)) })),
+      togglePin: (id, messageId) => set((s) => ({
+        bots: s.bots.map((b) => {
+          if (b.id !== id) return b;
+          const pins = b.pins ?? [];
+          const next = pins.includes(messageId) ? pins.filter((pin) => pin !== messageId) : [...pins, messageId].slice(-20);
+          return { ...b, pins: next };
+        }),
+      })),
+      clearChat: (id) => set((s) => ({
+        bots: s.bots.map((b) => b.id === id ? { ...b, pins: [], messages: [{ id: uid("m"), from: "service" as const, text: "Chat history cleared.", ts: Date.now(), tone: "service" as const }] } : b),
+      })),
+      deleteMessage: (chatId, messageId) => set((s) => ({
+        bots: s.bots.map((b) => b.id === chatId ? { ...b, pins: (b.pins ?? []).filter((pin) => pin !== messageId), messages: b.messages.filter((m) => m.id !== messageId) } : b),
+      })),
+      createChannel: ({ name, description, photo }) => set((s) => {
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) || "channel";
+        const bot = createBot({ name, exchange: "Wire", online: true, source: "channel", commands: [] });
+        bot.kind = "channel";
+        bot.description = description;
+        bot.about = description;
+        bot.photo = photo;
+        bot.link = `wire/${slug}`;
+        bot.admins = [];
+        bot.pins = [];
+        bot.inbox = [];
+        bot.messages = [{ id: uid("m"), from: "service", text: description ? `${name}\n${description}` : `${name} created. Write the first post, or add a bot under Administrators.`, ts: Date.now() }];
+        return { bots: [...s.bots, bot], activeId: bot.id, infoOpen: true };
+      }),
+      setAdmins: (channelId, adminIds) => set((s) => ({
+        bots: s.bots.map((b) => b.id === channelId ? { ...b, admins: adminIds } : b),
+      })),
+      updateChannel: (id, patch) => set((s) => ({
+        bots: s.bots.map((b) => b.id === id ? { ...b, ...patch, about: patch.description ?? b.about } : b),
+      })),
+      addBot: (profile) => set((s) => {
+        const existing = s.bots.find((b) => b.bridgeDirectory === profile.directory);
+        if (existing) return { activeId: existing.id, infoOpen: false };
+        const bot = createBot({ name: profile.name, exchange: profile.exchange, online: false, source: "bridge", commands: [...COMMANDS] });
+        bot.bridgeDirectory = profile.directory;
+        bot.wallet = {}; bot.history = []; bot.prices = {}; bot.anchors = {}; bot.series = {};
+        bot.messages = []; bot.inbox = []; bot.typing = false; bot.unread = 0;
         bot.lanes.USDT = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
         bot.lanes.USDC = { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null };
-        bot.isaac.orders = [];
-        bot.isaac.virtualUsdt = 0;
-        bot.isaac.allocated = 0;
-        set((s) => ({ bots: [...s.bots, bot], activeId: bot.id }));
-      },
-      configureBot: (id, config) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, ...config, source: "bridge" } : b) })),
-      updateCommands: (id, commands) => set((s) => ({ bots: s.bots.map((b) => b.id === id ? { ...b, commands } : b) })),
+        bot.isaac.symbol = ""; bot.isaac.orders = []; bot.isaac.virtualUsdt = 0; bot.isaac.allocated = 0; bot.isaac.initial = 0;
+        bot.isaac.trailingStop = null; bot.isaac.trailingDistance = null; bot.isaac.dipActive = false; bot.isaac.dipLevel = null; bot.isaac.dipDistance = null;
+        return { bots: [...s.bots, bot], activeId: bot.id, infoOpen: false };
+      }),
       removeBot: (id) =>
         set((s) => {
+          if (id === MOTHER_ID) return s;
           const bots = s.bots.filter((b) => b.id !== id);
-          const activeId = s.activeId === id ? (bots[0]?.id ?? "") : s.activeId;
+          const activeId = s.activeId === id ? (bots.find((b) => !isMother(b))?.id ?? bots[0]?.id ?? "") : s.activeId;
           return { bots, activeId };
         }),
-      send: (text) => {
+      send: (text, botId, extra) => {
         const trimmed = text.trim();
-        if (!trimmed) return;
-        const id = get().activeId;
+        if (!trimmed && !extra?.image && !extra?.fileName) return;
+        const id = botId || get().activeId;
         const bot = get().bots.find((b) => b.id === id);
         if (!bot) return;
+        if (isMother(bot)) {
+          void applyMother(get().bots, trimmed).then((result) => {
+            const still = get().bots.some((b) => b.id === get().activeId);
+            set({ bots: result.bots, activeId: still ? get().activeId : result.bots[0]?.id ?? "" });
+          });
+          return;
+        }
+        if (bot.kind === "channel" || bot.source === "channel") {
+          const post: Message = { id: uid("m"), from: "bot", text: trimmed, image: extra?.image, fileName: extra?.fileName, ts: Date.now() };
+          set((s) => ({ bots: s.bots.map((b) => (b.id === id ? { ...b, messages: [...b.messages, post].slice(-500), unread: 0 } : b)) }));
+          return;
+        }
+        if (bot.kind === "publisher") {
+          const now = Date.now();
+          const mine: Message = { id: uid("m"), from: "me", text: trimmed || extra?.fileName || "Attachment", ts: now, image: extra?.image, fileName: extra?.fileName };
+          const reply: Message = { id: uid("m"), from: "bot", text: "This bot does not chat. Add it as an administrator of a channel. It will publish posts from its folder.", ts: now + 1 };
+          set((s) => ({ bots: s.bots.map((b) => (b.id === id ? { ...b, messages: [...b.messages, mine, reply].slice(-500), unread: 0 } : b)) }));
+          return;
+        }
+        if (bot.kind === "custom" || bot.kind === "forwarder" || bot.source === "custom") {
+          const now = Date.now();
+          const mine: Message = { id: uid("m"), from: "me", text: trimmed, ts: now };
+          const known = (bot.commands ?? []).some((c) => trimmed === c.name || trimmed.startsWith(c.name + " "));
+          const replyText = trimmed.startsWith("/")
+            ? known
+              ? `${trimmed.split(/\s+/)[0]} received.`
+              : "Unknown command. Open Menu to see this bot's commands."
+            : bot.kind === "forwarder"
+              ? "Forwarded."
+              : "Saved.";
+          const reply: Message = { id: uid("m"), from: "bot", text: replyText, ts: now + 1 };
+          set((s) => ({
+            bots: s.bots.map((b) => {
+              if (b.id === id) return { ...b, messages: [...b.messages, mine, reply].slice(-500), unread: 0 };
+              if (bot.kind === "forwarder" && b.id === bot.linkedChannelId && !trimmed.startsWith("/")) {
+                return { ...b, messages: [...b.messages, { id: uid("m"), from: "bot" as const, text: `${bot.name}\n${trimmed}`, ts: now }].slice(-500) };
+              }
+              return b;
+            }),
+          }));
+          return;
+        }
         const jobId = uid("j");
         const mine: Message = {
           id: jobId,
@@ -280,18 +353,7 @@ export const useDesk = create<DeskState>()(
           ts: Date.now(),
           pending: !bot.online,
         };
-        const notice: Message[] =
-          !bot.online && !bot.messages.some((m) => m.pending)
-            ? [
-                {
-                  id: uid("m"),
-                  from: "service",
-                  text: "Bot is offline. This message will send when it is back.",
-                  ts: Date.now(),
-                  tone: "service",
-                },
-              ]
-            : [];
+        const notice: Message[] = [];
         set((s) => ({
           bots: s.bots.map((b) =>
             b.id === id
@@ -308,7 +370,7 @@ export const useDesk = create<DeskState>()(
         let played = false;
         set((s) => ({
           bots: s.bots.map((b) => {
-            if (isBridge(b) || !b.online || b.typing || b.inbox.length) return b;
+            if (b.source !== "engine" || !b.online || b.typing || b.inbox.length) return b;
             const { bot, replies } = tickBot(b, Date.now());
             if (!replies.length) return { ...bot, messages: b.messages, inbox: b.inbox, typing: false, unread: b.unread };
             const pushed = pushReplies(b.messages, replies, Date.now());
@@ -341,37 +403,21 @@ export const useDesk = create<DeskState>()(
               let blocked = false;
               let connected = false;
               let snapshot: ScriptSnapshot | null = null;
-              const ctrl = new AbortController();
-              const timer = setTimeout(() => ctrl.abort(), 20000);
               try {
-                const response = await fetch(`${bridgeUrl(bot)}/command`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  cache: "no-store",
-                  body: JSON.stringify({ text: job.text }),
-                  signal: ctrl.signal,
-                });
-                const data = (await response.json().catch(() => ({}))) as {
-                  replies?: unknown;
-                  error?: string;
-                  blocked?: boolean;
-                };
-                connected = response.ok && !data.blocked;
-                blocked = Boolean(data.blocked) || !response.ok;
-                replies = Array.isArray(data.replies)
-                  ? data.replies.map((v) => String(v))
-                  : [String(data.error || "The script returned no response.")];
-                try {
-                  const snap = await fetch(`${bridgeUrl(bot)}/snapshot`, { cache: "no-store" });
-                  if (snap.ok) snapshot = (await snap.json()) as ScriptSnapshot;
-                } catch {
-                  /* reply still stands */
+                const result = await window.wire?.bridgeCommand(job.text, bot.bridgeDirectory);
+                connected = Boolean(result?.ok);
+                blocked = !connected;
+                replies = connected
+                  ? [String(result?.text || "The running bot returned no message.")]
+                  : [String(result?.error || "The local bot bridge is unavailable. Start the bot manually in CMD.")];
+                const poll = await window.wire?.bridgePoll(bot.bridgeDirectory);
+                if (poll) {
+                  snapshot = poll.snapshot;
+                  connected = poll.connected && connected;
                 }
               } catch {
-                replies = ["REAL SCRIPT NOT CONNECTED. Open this bot’s details and choose Connect / start script. This chat did not simulate the command."];
+                replies = ["Bot is not responding. Check that its process and bridge are running."];
                 blocked = true;
-              } finally {
-                clearTimeout(timer);
               }
               const now = Date.now();
               const newMessages: Message[] = replies.map((reply) => {
@@ -384,8 +430,8 @@ export const useDesk = create<DeskState>()(
                   if (b.id !== id) return b;
                   const lanes = snapshot
                     ? {
-                        USDT: { ...b.lanes.USDT, symbol: snapshot.activePair ?? null, lastSymbol: snapshot.activePair ?? b.lanes.USDT.lastSymbol },
-                        USDC: { ...b.lanes.USDC, symbol: snapshot.activePairUSDC ?? null, lastSymbol: snapshot.activePairUSDC ?? b.lanes.USDC.lastSymbol },
+                        USDT: { ...b.lanes.USDT, symbol: snapshot.symbol ?? null, lastSymbol: snapshot.symbol ?? b.lanes.USDT.lastSymbol },
+                        USDC: { ...b.lanes.USDC, symbol: snapshot.symbol2 ?? null, lastSymbol: snapshot.symbol2 ?? b.lanes.USDC.lastSymbol },
                       }
                     : b.lanes;
                   return {
@@ -393,7 +439,7 @@ export const useDesk = create<DeskState>()(
                     online: connected,
                     lastSeen: now,
                     lanes,
-                    isaac: snapshot?.isaacPair ? { ...b.isaac, symbol: snapshot.isaacPair } : b.isaac,
+                    isaac: snapshot ? { ...b.isaac, allocated: Number(snapshot.isaac_allocated ?? b.isaac.allocated) } : b.isaac,
                     messages: [...b.messages.map((m) => (m.id === job.id ? { ...m, pending: false } : m)), ...newMessages].slice(-500),
                     inbox: b.inbox.filter((j) => j.id !== job.id),
                     typing: false,
@@ -462,14 +508,23 @@ export const useDesk = create<DeskState>()(
       name: "wire-desk-v1",
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<DeskState>;
-        if (!saved.bots?.length) return { ...current, ...saved };
-        const bots = saved.bots.filter((b) => b.source === "bridge" && b.name !== "ABinanceTradingBot (local)").map((b) => ({
-          ...b,
-          typing: false,
-          source: "bridge" as const,
-          inbox: b.inbox ?? [],
+        if (!saved.bots?.length) return { ...current, ...saved, bots: seeded, activeId: seeded[0].id, query: "" };
+        const savedBots = saved.bots.filter((b) => isMother(b) || b.source === "bridge" || b.source === "custom" || b.source === "channel").map((b) => (b.source === "custom" || b.source === "channel") ? { ...b, typing: false, inbox: [], online: b.kind === "publisher" ? true : b.online, pins: b.pins ?? [], admins: b.admins ?? [], messages: (b.messages ?? []).slice(-500) } : isMother(b) ? { ...makeMother(b.messages?.[0]?.ts), ...b, id: MOTHER_ID, source: "system" as const, kind: "mother" as const, online: true, typing: false, inbox: [], commands: MOTHER_COMMANDS, pins: b.pins ?? [], motherStep: null } : ({
+          ...b, scriptPath: undefined, pythonPath: undefined, bridgePort: undefined,
+          typing: false, online: false, unread: 0, source: "bridge" as const,
+          bridgeDirectory: b.bridgeDirectory || (b.name === "ABinanceTradingBot" ? "ABINANCE TESTNET" : undefined),
+          messages: (b.messages ?? []).filter((m) => m.from !== "service").slice(-500),
+          inbox: [], conversation: null, pins: b.pins ?? [],
+          commands: b.commands?.length ? b.commands : [...COMMANDS],
+          wallet: {}, history: [], prices: {}, anchors: {}, series: {},
+          lanes: {
+            USDT: { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null },
+            USDC: { symbol: null, lastSymbol: null, allocated: 0, rescuePool: 0, position: null },
+          },
+          isaac: { ...b.isaac, symbol: "", orders: [], virtualUsdt: 0, allocated: 0, initial: 0, trailingStop: null, trailingDistance: null, dipActive: false, dipLevel: null, dipDistance: null },
         }));
-        const activeId = saved.activeId && bots.some((b) => b.id === saved.activeId) ? saved.activeId : (bots[0]?.id ?? "");
+        const bots = savedBots.length ? savedBots : seeded;
+        const activeId = saved.activeId && bots.some((b) => b.id === saved.activeId) ? saved.activeId : bots[0].id;
         return { ...current, ...saved, bots, activeId, query: "" };
       },
       partialize: (s) => ({

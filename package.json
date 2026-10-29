@@ -114,8 +114,8 @@
     ],
     "extraResources": [
       {
-        "from": "desktop/wire_bridge.py",
-        "to": "bridge/wire_bridge.py"
+        "from": "desktop/companion",
+        "to": "companion"
       }
     ],
     "win": {
@@ -137,7 +137,7 @@
       "createStartMenuShortcut": true
     }
   },
-  "version": "1.0.3",
-  "description": "Private local desktop chat for managing Python bots",
+  "version": "1.0.11",
+  "description": "Private local desktop chat for controlling an already-running Python bot through its file bridge",
   "author": "MajesticCryptoBot"
 }

@@ -1,5 +1,5 @@
 export type Lane = "USDT" | "USDC";
-export type Exchange = "Binance Testnet" | "Binance" | "Bybit" | "Bitget";
+export type Exchange = "Binance Testnet" | "Binance" | "Bybit" | "Bitget" | "Wire";
 export type Tone = "normal" | "trade" | "alert" | "service";
 
 export type CommandSpec = {
@@ -30,7 +30,6 @@ export const COMMANDS: CommandSpec[] = [
   { name: "/reset_state2", hint: "Clear the USDC lane", group: "USDC", danger: true },
   { name: "/isaac_status", hint: "Isaac DCA panel", group: "Isaac" },
   { name: "/emergency_isaac", hint: "Sell Isaac and reset the cycle", group: "Isaac", danger: true },
-  { name: "/cancel", hint: "Abort the current question", group: "Session" },
 ];
 
 export const BASES = [
@@ -136,6 +135,8 @@ export type Message = {
   pending?: boolean;
   tone?: Tone;
   mono?: boolean;
+  image?: string;
+  fileName?: string;
 };
 
 export type InboxJob = { id: string; text: string };
@@ -159,11 +160,28 @@ export type Bot = {
   inbox: InboxJob[];
   typing: boolean;
   entryCooldownUntil: number;
-  source: "engine" | "bridge";
+  source: "engine" | "bridge" | "system" | "custom" | "channel";
+  kind?: "trading" | "custom" | "forwarder" | "publisher" | "channel" | "mother";
+  username?: string;
+  about?: string;
+  description?: string;
+  link?: string;
+  admins?: string[];
+  linkedChannelId?: string;
+  inlineMode?: boolean;
+  joinGroups?: boolean;
+  privacy?: boolean;
+  token?: string;
+  bridgeDirectory?: string;
   bridgePort?: number;
   scriptPath?: string;
   pythonPath?: string;
   commands?: CommandSpec[];
+  photo?: string;
+  pins?: string[];
+  motherStep?: string | null;
+  motherTarget?: string;
+  motherDraft?: string;
 };
 
 export type Reply = { text: string; tone: Tone; mono?: boolean };
@@ -1426,7 +1444,7 @@ export function createBot(input: {
   exchange: Exchange;
   online?: boolean;
   now?: number;
-  source?: "engine" | "bridge";
+  source?: "engine" | "bridge" | "system" | "custom" | "channel";
   bridgePort?: number;
   scriptPath?: string;
   pythonPath?: string;
