@@ -35,6 +35,7 @@ function bridgeFiles(raw) {
     queue: path.join(dir, "asp_command_queue.json"),
     response: path.join(dir, "asp_command_response.json"),
     live: path.join(dir, "asp_live_feed.json"),
+    channel: path.join(dir, "asp_channel_feed.json"),
     snapshot: path.join(dir, "asp_status_snapshot.json"),
   };
 }
@@ -75,6 +76,24 @@ function readLiveItems(raw) {
   while (seen.size > 500) seen.delete(seen.values().next().value);
   return fresh;
 }
+function readChannelPosts(raw) {
+  let files;
+  try { files = bridgeFiles(raw); } catch { return []; }
+  const entries = readJson(files.channel);
+  if (!Array.isArray(entries)) return [];
+  const key = files.directory + ":channel";
+  if (!seenLiveIds.has(key)) seenLiveIds.set(key, new Set());
+  const seen = seenLiveIds.get(key);
+  const fresh = [];
+  for (const item of entries) {
+    const id = String(item?.id ?? "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    fresh.push({ id, text: String(item?.text ?? ""), image: typeof item?.image === "string" ? item.image.slice(0, 180000) : undefined, ts: item?.ts ? Date.parse(item.ts) : Date.now() });
+  }
+  while (seen.size > 500) seen.delete(seen.values().next().value);
+  return fresh;
+}
 function registerIpc() {
   ipcMain.handle("wire:select-wallpaper", async () => {
     const result = await dialog.showOpenDialog({
@@ -97,7 +116,16 @@ function registerIpc() {
   });
   ipcMain.handle("wire:bridge-poll", (_event, rawDirectory) => {
     const state = bridgeSnapshot(rawDirectory);
-    return { connected: state.connected, snapshot: state.snapshot, items: readLiveItems(rawDirectory), bridgeDirectory: bridgeDir(rawDirectory) };
+    return { connected: state.connected, snapshot: state.snapshot, items: readLiveItems(rawDirectory), posts: readChannelPosts(rawDirectory), bridgeDirectory: bridgeDir(rawDirectory) };
+  });
+  ipcMain.handle("wire:ensure-feed", (_event, rawDirectory) => {
+    let files;
+    try { files = bridgeFiles(rawDirectory); } catch (error) {
+      return { ok: false, error: String(error?.message || error) };
+    }
+    fs.mkdirSync(files.directory, { recursive: true });
+    if (!fs.existsSync(files.channel)) fs.writeFileSync(files.channel, "[]\n", "utf8");
+    return { ok: true, path: files.channel };
   });
   ipcMain.handle("wire:bridge-command", async (_event, payload) => {
     const command = String(payload?.command || "").trim();

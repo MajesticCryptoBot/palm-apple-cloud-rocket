@@ -8,19 +8,21 @@ import {
   Clock,
   Copy,
   PanelRight,
+  Paperclip,
   Pin,
   Plus,
   RotateCw,
   Search,
   Settings,
   Send,
+  Trash2,
   Volume2,
   VolumeX,
   X,
 } from "lucide-react";
 import { COMMANDS, laneQuotes, previewLine, pxFmt, type Bot, type CommandSpec, type Message } from "@/lib/wire/engine";
 import { useDesk } from "@/lib/wire/store";
-import { AddBotDialog } from "@/components/wire-add-bot";
+import { AddBotDialog, NewChannelDialog, PlusMenu } from "@/components/wire-add-bot";
 import { WireSettings } from "@/components/wire-settings";
 import { startCompanion } from "@/lib/wire/companion";
 
@@ -118,6 +120,8 @@ export function Desk() {
   const [listMode, setListMode] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addBotOpen, setAddBotOpen] = useState(false);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [channelOpen, setChannelOpen] = useState(false);
   const active = bots.find((b) => b.id === activeId) ?? bots[0] ?? null;
 
   useEffect(() => {
@@ -139,7 +143,7 @@ export function Desk() {
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <div><h1 className="text-lg font-semibold tracking-tight">WIRE</h1><p className="text-xs text-muted">Private messenger</p></div>
           <div className="flex items-center gap-1">
-            <button type="button" onClick={() => setAddBotOpen(true)} className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent" aria-label="Add bot" title="Add bot"><Plus className="size-5" /></button>
+            <button type="button" onClick={() => setPlusOpen((v) => !v)} className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent" aria-label="New chat" title="New"><Plus className="size-5" /></button>
             <button type="button" onClick={() => setSettingsOpen(true)} className="grid size-10 place-items-center rounded-full bg-elevated text-muted hover:bg-bubble-out hover:text-accent" aria-label="Settings" title="Settings"><Settings className="size-5" /></button>
           </div>
         </div>
@@ -162,6 +166,8 @@ export function Desk() {
         <button type="button" className="fixed inset-0 z-20 bg-bg/70 xl:hidden" aria-label="Close details" onClick={toggleInfo} />
         <InfoPanel bot={active} onClose={toggleInfo} />
       </>}
+      {plusOpen && <PlusMenu onChannel={() => { setPlusOpen(false); setChannelOpen(true); }} onBot={() => { setPlusOpen(false); setAddBotOpen(true); }} onClose={() => setPlusOpen(false)} />}
+      {channelOpen && <NewChannelDialog onClose={() => { setChannelOpen(false); setListMode(false); }} />}
       {addBotOpen && <AddBotDialog existing={bots.map((b) => b.bridgeDirectory ?? "")} onPick={(profile) => { addBot(profile); setAddBotOpen(false); setListMode(false); }} onClose={() => setAddBotOpen(false)} />}
       {settingsOpen && <WireSettings botId={active?.id ?? ""} onClose={() => setSettingsOpen(false)} />}
     </div>
@@ -454,8 +460,9 @@ function Thread({
                     </div>
                   )}
                   <Bubble
-                    onRepeat={m.text.trim().startsWith("/") ? () => useDesk.getState().send(m.text.trim().split(/\s+/)[0]) : undefined}
+                    onRepeat={bot.kind !== "channel" && m.text.trim().startsWith("/") ? () => useDesk.getState().send(m.text.trim().split(/\s+/)[0]) : undefined}
                     onPin={() => useDesk.getState().togglePin(bot.id, m.id)}
+                    onDelete={() => useDesk.getState().deleteMessage(bot.id, m.id)}
                     pinned={(bot.pins ?? []).includes(m.id)}
                     channel={bot.kind === "channel"}
                     message={m}
@@ -505,6 +512,7 @@ function Bubble({
   message,
   onRepeat,
   onPin,
+  onDelete,
   pinned,
   channel,
   query,
@@ -515,6 +523,7 @@ function Bubble({
   message: Message;
   onRepeat?: () => void;
   onPin?: () => void;
+  onDelete?: () => void;
   pinned?: boolean;
   channel?: boolean;
   query: string;
@@ -523,6 +532,7 @@ function Bubble({
   current: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  const [menu, setMenu] = useState(false);
   if (message.from === "service") {
     return (
       <div className="my-2 flex justify-center">
@@ -533,30 +543,46 @@ function Bubble({
   const mine = message.from === "me" && !channel;
   const edge = message.tone === "trade" ? "tone-trade" : message.tone === "alert" ? "tone-alert" : "";
   return (
-    <div className={`group flex ${mine ? "justify-end" : "justify-start"} ${grouped ? "mt-0.5" : "mt-2"}`}>
+    <div className={`group flex ${mine ? "justify-end" : "justify-start"} ${grouped ? "mt-0.5" : "mt-2"}`} onContextMenu={(e) => { e.preventDefault(); setMenu(true); }}>
       <div
-        className={`bubble bubble-col rounded-lg px-2.5 pt-1.5 pb-1.5 text-sm leading-snug ${
+        className={`bubble bubble-col relative max-w-[min(100%,36rem)] rounded-lg px-2.5 pt-1.5 pb-1.5 text-sm leading-snug ${
           mine ? "bubble-out bg-bubble-out" : `bubble-in bg-bubble-in ${edge}`
         } ${tail ? "has-tail" : ""} ${message.mono ? "font-mono text-xs leading-relaxed" : ""} ${
           current ? "ring-1 ring-warn" : ""
-        }`}
+        } ${channel ? "w-full" : ""}`}
       >
-        <div className="pr-16 pb-0.5">
-          <Rich text={message.text} query={query} onCommand={(command) => useDesk.getState().send(command)} />
-        </div>
+        {message.image && <img src={message.image} alt="" className="mb-1 max-h-64 rounded-md object-cover" />}
+        {message.fileName && <div className="mb-1 text-xs text-accent">{message.fileName}</div>}
+        {message.text && (
+          <div className="pr-16 pb-0.5">
+            <Rich text={message.text} query={query} onCommand={(command) => { if (!channel) useDesk.getState().send(command); }} />
+          </div>
+        )}
         <span className="absolute right-2 bottom-1 inline-flex items-center gap-0.5 text-xs text-subtle">
           {pinned && <Pin className="size-3 text-accent" aria-label="Pinned" />}
           {message.pending && <Clock className="size-3" aria-label="Waiting to send" />}
           {hm(message.ts)}
           {mine && !message.pending && <CheckCheck className="size-3.5 text-accent" aria-label="Read" />}
         </span>
+        {menu && (
+          <div className="absolute top-0 right-0 z-20 min-w-36 rounded-lg border border-line bg-sidebar py-1 text-sm shadow-xl">
+            <button type="button" className="block w-full px-3 py-2 text-left hover:bg-elevated" onClick={() => { onPin?.(); setMenu(false); }}> {pinned ? "Unpin" : "Pin"}</button>
+            <button type="button" className="block w-full px-3 py-2 text-left hover:bg-elevated" onClick={() => { void navigator.clipboard?.writeText(message.text); setMenu(false); }}>Copy</button>
+            <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-danger hover:bg-elevated" onClick={() => { onDelete?.(); setMenu(false); }}><Trash2 className="size-3.5" /> Delete</button>
+          </div>
+        )}
         {onPin && (
           <button type="button" onClick={onPin} className="absolute -top-2 right-20 rounded-full bg-sidebar px-2 py-1 text-xs text-accent opacity-0 shadow ring-1 ring-line group-hover:opacity-100" aria-label={pinned ? "Unpin" : "Pin"}>
             <Pin className="size-3.5" />
           </button>
         )}
+        {onDelete && (
+          <button type="button" onClick={onDelete} className="absolute -top-2 right-10 rounded-full bg-sidebar px-2 py-1 text-xs text-danger opacity-0 shadow ring-1 ring-line group-hover:opacity-100" aria-label="Delete message">
+            <Trash2 className="size-3.5" />
+          </button>
+        )}
         {onRepeat && (
-          <button type="button" onClick={onRepeat} className="absolute -top-2 right-10 rounded-full bg-sidebar px-2 py-1 text-xs text-accent opacity-0 shadow ring-1 ring-line group-hover:opacity-100" aria-label="Run this command" title="Run this command">
+          <button type="button" onClick={onRepeat} className="absolute -top-2 right-28 rounded-full bg-sidebar px-2 py-1 text-xs text-accent opacity-0 shadow ring-1 ring-line group-hover:opacity-100" aria-label="Run this command" title="Run this command">
             <RotateCw className="size-3.5" />
           </button>
         )}
@@ -634,10 +660,10 @@ function Composer({ bot }: { bot: Bot }) {
     setMenuIndex(0);
   }, [draft, menuForced]);
 
-  function submit(text: string) {
+  function submit(text: string, extra?: { image?: string; fileName?: string }) {
     const value = text.trim();
-    if (!value) return;
-    send(value);
+    if (!value && !extra?.image && !extra?.fileName) return;
+    send(value, undefined, extra);
     setDraft("");
     setMenuForced(false);
   }
@@ -729,6 +755,7 @@ function Composer({ bot }: { bot: Bot }) {
       )}
 
       <div className="flex items-end gap-1.5 px-2 py-2">
+        {bot.kind !== "channel" && (
         <button
           type="button"
           onClick={() => {
@@ -741,6 +768,22 @@ function Composer({ bot }: { bot: Bot }) {
         >
           {menuForced ? "Close" : "Menu"}
         </button>
+        )}
+        <label className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-full text-muted hover:bg-elevated" aria-label="Attach">
+          <Paperclip className="size-5" />
+          <input type="file" className="hidden" onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (!file) return;
+            if (file.type.startsWith("image/")) {
+              const reader = new FileReader();
+              reader.onload = () => { if (typeof reader.result === "string") submit(draft, { image: reader.result, fileName: file.name }); };
+              reader.readAsDataURL(file);
+              return;
+            }
+            submit(draft || file.name, { fileName: file.name });
+          }} />
+        </label>
         <textarea
           ref={inputRef}
           rows={1}
@@ -753,7 +796,7 @@ function Composer({ bot }: { bot: Bot }) {
         <button
           type="button"
           onClick={() => submit(draft)}
-          disabled={!draft.trim()}
+          disabled={!draft.trim() && bot.kind !== "channel"}
           className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-bg disabled:bg-elevated disabled:text-subtle"
           aria-label="Send"
         >
@@ -766,13 +809,53 @@ function Composer({ bot }: { bot: Bot }) {
 
 function InfoPanel({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   const updateCommands = useDesk((s) => s.updateCommands);
+  const bots = useDesk((s) => s.bots);
+  const setAdmins = useDesk((s) => s.setAdmins);
+  const updateChannel = useDesk((s) => s.updateChannel);
   const [editingCommands, setEditingCommands] = useState(false);
   const [commandDraft, setCommandDraft] = useState(commandLines(bot.commands));
+  const [addingAdmin, setAddingAdmin] = useState(false);
+  const [desc, setDesc] = useState(bot.description || "");
+  if (bot.kind === "channel") {
+    const admins = bots.filter((item) => (bot.admins ?? []).includes(item.id));
+    const candidates = bots.filter((item) => item.kind !== "channel" && item.source !== "system" && !(bot.admins ?? []).includes(item.id));
+    return (
+      <aside className="absolute inset-y-0 right-0 z-30 flex w-full min-h-0 flex-col border-l border-line bg-sidebar sm:w-80 xl:static">
+        <div className="flex items-center justify-between px-4 py-3"><h2 className="font-semibold">Channel info</h2><button type="button" onClick={onClose} className="grid size-10 place-items-center rounded-full hover:bg-elevated" aria-label="Close details"><X className="size-5" /></button></div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-6">
+          <div className="flex items-center gap-3"><Avatar name={bot.name} online photo={bot.photo} /><div><div className="font-medium">{bot.name}</div><div className="text-sm text-muted">Channel</div></div></div>
+          <button type="button" className="rounded-md bg-elevated px-3 py-2 text-xs" onClick={() => { void window.wire?.selectWallpaper().then((photo) => { if (photo) useDesk.getState().setPhoto(bot.id, photo); }); }}>Change profile photo</button>
+          <label className="block text-sm">Description
+            <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} className="mt-1 w-full rounded-md bg-bg p-2 text-sm outline-none" />
+          </label>
+          <button type="button" className="rounded-md bg-accent-strong px-3 py-2 text-xs" onClick={() => updateChannel(bot.id, { description: desc })}>Save description</button>
+          <section className="rounded-md bg-bg p-3 text-sm">
+            <h3 className="font-medium">Link</h3>
+            <button type="button" className="mt-1 text-accent" onClick={() => void navigator.clipboard?.writeText(bot.link || "")}>{bot.link}</button>
+          </section>
+          <section className="rounded-md bg-bg p-3 text-sm">
+            <div className="flex items-center justify-between"><h3 className="font-medium">Administrators</h3><button type="button" className="text-xs text-accent" onClick={() => setAddingAdmin((v) => !v)}>Add</button></div>
+            <p className="mt-2 text-xs text-muted">You — owner</p>
+            {admins.map((admin) => (
+              <div key={admin.id} className="mt-2 flex items-center justify-between gap-2">
+                <span>{admin.name}</span>
+                <button type="button" className="text-xs text-danger" onClick={() => setAdmins(bot.id, (bot.admins ?? []).filter((id) => id !== admin.id))}>Remove</button>
+              </div>
+            ))}
+            {addingAdmin && candidates.map((admin) => (
+              <button key={admin.id} type="button" className="mt-2 block w-full rounded-md bg-elevated px-2 py-2 text-left text-xs" onClick={() => { setAdmins(bot.id, [...(bot.admins ?? []), admin.id]); if (admin.bridgeDirectory) void window.wire?.ensureFeed?.(admin.bridgeDirectory); setAddingAdmin(false); }}>{admin.name}</button>
+            ))}
+            <p className="mt-3 text-xs text-muted">A news bot posts into this channel when its Desktop folder contains asp_channel_feed.json. Add that bot here. There is no subscriber list.</p>
+          </section>
+        </div>
+      </aside>
+    );
+  }
   return (
     <aside className="absolute inset-y-0 right-0 z-30 flex w-full min-h-0 flex-col border-l border-line bg-sidebar sm:w-80 xl:static">
       <div className="flex items-center justify-between px-4 py-3"><h2 className="font-semibold">Bot details</h2><button type="button" onClick={onClose} className="grid size-10 place-items-center rounded-full hover:bg-elevated" aria-label="Close details"><X className="size-5" /></button></div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-6">
-        <div className="flex items-center gap-3"><Avatar name={bot.name} online={bot.online} photo={bot.photo} /><div><div className="font-medium">{bot.name}</div><div className={`text-sm ${bot.online ? "text-online" : "text-muted"}`}>{bot.kind === "channel" ? "Channel" : bot.online ? "Online" : "Offline"}</div></div></div>
+        <div className="flex items-center gap-3"><Avatar name={bot.name} online={bot.online} photo={bot.photo} /><div><div className="font-medium">{bot.name}</div><div className={`text-sm ${bot.online ? "text-online" : "text-muted"}`}>{bot.online ? "Online" : "Offline"}</div></div></div>
         <button type="button" className="rounded-md bg-elevated px-3 py-2 text-xs" onClick={() => { void window.wire?.selectWallpaper().then((photo) => { if (photo) useDesk.getState().setPhoto(bot.id, photo); }); }}>Set profile photo</button>
         <section className="rounded-md bg-bg p-3 text-sm">
           <div className="flex items-center justify-between gap-2"><h3 className="font-medium">Command menu</h3><button type="button" className="text-xs text-accent" onClick={() => { setCommandDraft(commandLines(bot.commands)); setEditingCommands((v) => !v); }}>{editingCommands ? "Cancel" : "Edit commands"}</button></div>

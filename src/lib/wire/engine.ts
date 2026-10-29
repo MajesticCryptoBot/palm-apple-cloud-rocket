@@ -135,6 +135,8 @@ export type Message = {
   pending?: boolean;
   tone?: Tone;
   mono?: boolean;
+  image?: string;
+  fileName?: string;
 };
 
 export type InboxJob = { id: string; text: string };
@@ -159,10 +161,16 @@ export type Bot = {
   typing: boolean;
   entryCooldownUntil: number;
   source: "engine" | "bridge" | "system" | "custom" | "channel";
-  kind?: "trading" | "custom" | "forwarder" | "channel" | "mother";
+  kind?: "trading" | "custom" | "forwarder" | "publisher" | "channel" | "mother";
+  username?: string;
   about?: string;
   description?: string;
+  link?: string;
+  admins?: string[];
   linkedChannelId?: string;
+  inlineMode?: boolean;
+  joinGroups?: boolean;
+  privacy?: boolean;
   token?: string;
   bridgeDirectory?: string;
   bridgePort?: number;

@@ -14,7 +14,7 @@ import {
   type Reply,
   type Tone,
 } from "@/lib/wire/engine";
-import { applyMother, isMother, makeMother, MOTHER_ID } from "@/lib/wire/mother";
+import { applyMother, isMother, makeMother, MOTHER_COMMANDS, MOTHER_ID } from "@/lib/wire/mother";
 
 type DeskState = {
   bots: Bot[];
@@ -26,7 +26,11 @@ type DeskState = {
   setActive: (id: string) => void;
   toggleSound: () => void;
   toggleInfo: () => void;
-  send: (text: string, botId?: string) => void;
+  send: (text: string, botId?: string, extra?: { image?: string; fileName?: string }) => void;
+  deleteMessage: (chatId: string, messageId: string) => void;
+  createChannel: (input: { name: string; description: string; photo?: string }) => void;
+  setAdmins: (channelId: string, adminIds: string[]) => void;
+  updateChannel: (id: string, patch: { name?: string; description?: string; link?: string }) => void;
   toggleOnline: (id: string) => void;
   updateCommands: (id: string, commands: CommandSpec[]) => void;
   setPhoto: (id: string, photo: string) => void;
@@ -94,8 +98,9 @@ declare global {
     wire?: {
       selectWallpaper: () => Promise<string | null>;
       showNotification: (payload: { title: string; body: string; silent?: boolean }) => Promise<{ ok: boolean }>;
-      bridgePoll: (directory?: string) => Promise<{ connected: boolean; error?: string; snapshot: ScriptSnapshot | null; items: { id: string; text: string; ts?: number }[]; bridgeDirectory: string }>;
+      bridgePoll: (directory?: string) => Promise<{ connected: boolean; error?: string; snapshot: ScriptSnapshot | null; items: { id: string; text: string; ts?: number }[]; posts?: { id: string; text: string; ts?: number; image?: string }[]; bridgeDirectory: string }>;
       bridgeCommand: (command: string, directory?: string) => Promise<{ ok: boolean; error?: string; text?: string; ts?: string }>;
+      ensureFeed?: (directory: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
     };
   }
 }
@@ -116,7 +121,8 @@ let polling = false;
 async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => void, get: () => DeskState) {
   if (polling || !window.wire?.bridgePoll) return;
   const targets = get().bots.filter(isBridge);
-  if (!targets.length) return;
+  const channels = get().bots.filter((b) => b.kind === "channel" && (b.admins ?? []).length);
+  if (!targets.length && !channels.length) return;
   polling = true;
   try {
     for (const target of targets) {
@@ -157,6 +163,33 @@ async function pollBridge(set: (fn: (s: DeskState) => Partial<DeskState>) => voi
       if (notificationStyle === "system-and-chat" || notificationStyle === "system-only") {
         for (const reply of replies.slice(-3)) {
           void window.wire?.showNotification({ title: target.name, body: reply.text.replace(/\s+/g, " ").slice(0, 240), silent: notificationStyle === "system-only" });
+        }
+      }
+    }
+    const channels = get().bots.filter((b) => b.kind === "channel");
+    const notify = (() => { try { return localStorage.getItem("wire-notification-style") || "system-and-chat"; } catch { return "system-and-chat"; } })();
+    for (const channel of channels) {
+      const publishers = get().bots.filter((b) => (channel.admins ?? []).includes(b.id) && b.bridgeDirectory);
+      for (const publisher of publishers) {
+        const polled = await window.wire.bridgePoll(publisher.bridgeDirectory).catch(() => null);
+        const posts = polled?.posts ?? [];
+        if (!posts.length) continue;
+        const now = Date.now();
+        const active = get().activeId === channel.id;
+        const extra: Message[] = posts.map((item) => ({
+          id: uid("m"),
+          from: "bot" as const,
+          text: String(item.text || ""),
+          image: item.image,
+          ts: typeof item.ts === "number" && Number.isFinite(item.ts) ? item.ts : now,
+        })).filter((item) => item.text || item.image);
+        set((state) => ({
+          bots: state.bots.map((bot) => bot.id === channel.id ? { ...bot, messages: [...bot.messages, ...extra].slice(-500), unread: active ? 0 : bot.unread + extra.length } : bot),
+        }));
+        if (notify === "system-and-chat" || notify === "system-only") {
+          for (const post of extra.slice(-3)) {
+            void window.wire?.showNotification({ title: channel.name, body: (post.text || "New post").replace(/\s+/g, " ").slice(0, 240), silent: !get().sound });
+          }
         }
       }
     }
@@ -221,6 +254,29 @@ export const useDesk = create<DeskState>()(
       clearChat: (id) => set((s) => ({
         bots: s.bots.map((b) => b.id === id ? { ...b, pins: [], messages: [{ id: uid("m"), from: "service" as const, text: "Chat history cleared.", ts: Date.now(), tone: "service" as const }] } : b),
       })),
+      deleteMessage: (chatId, messageId) => set((s) => ({
+        bots: s.bots.map((b) => b.id === chatId ? { ...b, pins: (b.pins ?? []).filter((pin) => pin !== messageId), messages: b.messages.filter((m) => m.id !== messageId) } : b),
+      })),
+      createChannel: ({ name, description, photo }) => set((s) => {
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) || "channel";
+        const bot = createBot({ name, exchange: "Wire", online: true, source: "channel", commands: [] });
+        bot.kind = "channel";
+        bot.description = description;
+        bot.about = description;
+        bot.photo = photo;
+        bot.link = `wire/${slug}`;
+        bot.admins = [];
+        bot.pins = [];
+        bot.inbox = [];
+        bot.messages = [{ id: uid("m"), from: "service", text: description ? `${name}\n${description}` : `${name} created. Write the first post, or add a bot under Administrators.`, ts: Date.now() }];
+        return { bots: [...s.bots, bot], activeId: bot.id, infoOpen: true };
+      }),
+      setAdmins: (channelId, adminIds) => set((s) => ({
+        bots: s.bots.map((b) => b.id === channelId ? { ...b, admins: adminIds } : b),
+      })),
+      updateChannel: (id, patch) => set((s) => ({
+        bots: s.bots.map((b) => b.id === id ? { ...b, ...patch, about: patch.description ?? b.about } : b),
+      })),
       addBot: (profile) => set((s) => {
         const existing = s.bots.find((b) => b.bridgeDirectory === profile.directory);
         if (existing) return { activeId: existing.id, infoOpen: false };
@@ -241,9 +297,9 @@ export const useDesk = create<DeskState>()(
           const activeId = s.activeId === id ? (bots.find((b) => !isMother(b))?.id ?? bots[0]?.id ?? "") : s.activeId;
           return { bots, activeId };
         }),
-      send: (text, botId) => {
+      send: (text, botId, extra) => {
         const trimmed = text.trim();
-        if (!trimmed) return;
+        if (!trimmed && !extra?.image && !extra?.fileName) return;
         const id = botId || get().activeId;
         const bot = get().bots.find((b) => b.id === id);
         if (!bot) return;
@@ -255,8 +311,15 @@ export const useDesk = create<DeskState>()(
           return;
         }
         if (bot.kind === "channel" || bot.source === "channel") {
-          const post: Message = { id: uid("m"), from: "bot", text: trimmed, ts: Date.now() };
+          const post: Message = { id: uid("m"), from: "bot", text: trimmed, image: extra?.image, fileName: extra?.fileName, ts: Date.now() };
           set((s) => ({ bots: s.bots.map((b) => (b.id === id ? { ...b, messages: [...b.messages, post].slice(-500), unread: 0 } : b)) }));
+          return;
+        }
+        if (bot.kind === "publisher") {
+          const now = Date.now();
+          const mine: Message = { id: uid("m"), from: "me", text: trimmed || extra?.fileName || "Attachment", ts: now, image: extra?.image, fileName: extra?.fileName };
+          const reply: Message = { id: uid("m"), from: "bot", text: "This bot does not chat. Add it as an administrator of a channel. It will publish posts from its folder.", ts: now + 1 };
+          set((s) => ({ bots: s.bots.map((b) => (b.id === id ? { ...b, messages: [...b.messages, mine, reply].slice(-500), unread: 0 } : b)) }));
           return;
         }
         if (bot.kind === "custom" || bot.kind === "forwarder" || bot.source === "custom") {
@@ -446,7 +509,7 @@ export const useDesk = create<DeskState>()(
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<DeskState>;
         if (!saved.bots?.length) return { ...current, ...saved, bots: seeded, activeId: seeded[0].id, query: "" };
-        const savedBots = saved.bots.filter((b) => isMother(b) || b.source === "bridge" || b.source === "custom" || b.source === "channel").map((b) => (b.source === "custom" || b.source === "channel") ? { ...b, typing: false, inbox: [], online: true, pins: b.pins ?? [], messages: (b.messages ?? []).slice(-500) } : isMother(b) ? { ...makeMother(b.messages?.[0]?.ts), ...b, id: MOTHER_ID, source: "system" as const, online: true, typing: false, inbox: [], commands: b.commands?.length ? b.commands : makeMother().commands, pins: b.pins ?? [] } : ({
+        const savedBots = saved.bots.filter((b) => isMother(b) || b.source === "bridge" || b.source === "custom" || b.source === "channel").map((b) => (b.source === "custom" || b.source === "channel") ? { ...b, typing: false, inbox: [], online: b.kind === "publisher" ? true : b.online, pins: b.pins ?? [], admins: b.admins ?? [], messages: (b.messages ?? []).slice(-500) } : isMother(b) ? { ...makeMother(b.messages?.[0]?.ts), ...b, id: MOTHER_ID, source: "system" as const, kind: "mother" as const, online: true, typing: false, inbox: [], commands: MOTHER_COMMANDS, pins: b.pins ?? [], motherStep: null } : ({
           ...b, scriptPath: undefined, pythonPath: undefined, bridgePort: undefined,
           typing: false, online: false, unread: 0, source: "bridge" as const,
           bridgeDirectory: b.bridgeDirectory || (b.name === "ABinanceTradingBot" ? "ABINANCE TESTNET" : undefined),
